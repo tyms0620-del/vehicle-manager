@@ -1,0 +1,2683 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="theme-color" content="#2563c8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://alcdn.msauth.net https://cdn.jsdelivr.net https://login.microsoftonline.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; connect-src 'self' https://graph.microsoft.com https://login.microsoftonline.com https://*.microsoftonline.com https://alcdn.msauth.net https://cdn.jsdelivr.net https://sundensetu.sharepoint.com; worker-src 'self' blob:; font-src 'self' data:; frame-src 'self' https://login.microsoftonline.com;">
+<link rel="manifest" href="data:application/json,%7B%22name%22%3A%22%E8%B5%B0%E8%A1%8C%E7%AE%A1%E7%90%86%E3%82%B7%E3%82%B9%E3%83%86%E3%83%A0%22%2C%22short_name%22%3A%22%E8%B5%B0%E8%A1%8C%E7%AE%A1%E7%90%86%22%2C%22start_url%22%3A%22./%22%2C%22display%22%3A%22standalone%22%2C%22background_color%22%3A%22%232563c8%22%2C%22theme_color%22%3A%22%232563c8%22%7D">
+<!-- Tesseract(OCR)は重いため起動時には読み込まず、カメラ撮影を使う時だけ遅延読み込みする -->
+<link rel="apple-touch-icon" href="data:image/svg+xml;charset=utf-8,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 180 180%22%3E%3Crect width=%22180%22 height=%22180%22 fill=%22%232563c8%22 rx=%2236%22/%3E%3Ctext x=%2290%22 y=%22120%22 font-size=%22100%22 text-anchor=%22middle%22%3E%F0%9F%9A%97%3C/text%3E%3C%2Fsvg%3E">
+<title>走行管理 v7.5</title>
+<!-- ============================================================
+     走行管理システム  Version 7.5  (2026-06-05)  ※v7.2ベース（PWAは含みません）
+     変更点(v7.5):
+       - 【不具合修正】車両マスタに登録できない不具合を修正
+         （車両リストには deleted 列が無いのに送っていたためエラーになっていた。送らないように修正）
+       - 【安全機構】SharePointに存在しない列が混じっても、その列を自動で除いて
+         登録を続行する仕組みを追加（スキーマ不一致でも登録不能にならない）
+     変更点(v7.4):
+       - まとめ入力の現場名で日本語変換ができない不具合を修正
+         （入力中は再描画せず、確定後に距離の自動提案を反映する方式に変更）
+       - セキュリティ点検を実施。編集画面の車両一覧でエスケープ漏れを修正(XSS対策強化)
+       - 【重要】保存した記録が消える不具合を修正
+         SharePointのdeleted列の既定値が「はい」でも、保存時に必ず
+         「削除しない(false)」を明示送信するように変更（log/fuel/vehicle）
+       - 保存失敗時に別の記録が画面から消える不具合を修正
+       - 保存失敗メッセージを分かりやすく（保存されていない旨を明示）
+     変更点(v7.2):
+       - サインインを初回から確実に成功するよう修正（ログイン直後のトークンを直接使用）
+       - 起動・サインインを軽量化（OCRライブラリを撮影時のみ遅延読み込み）
+       - 車両マスタに「運転者」欄を追加（登録・編集・一覧表示）
+     変更点(v7.1):
+       - 走行記録・給油の編集モーダルを復元（編集ボタンが押せない不具合を修正）
+       - まとめ入力で行先(現場名)から過去実績の距離を自動入力
+       - まとめ入力は行先+距離だけでも登録可能に
+     変更点(v7.0):
+       - 走行記録・給油を「自分のみ表示」(owner=メールで判定)
+       - レポート・車両は全員共有、レポートに個人別フィルター
+       - まとめ入力タブ追加(月別一覧・出発km引継ぎ・距離自動計算)
+       - 到着時の出発日消失バグ修正(部分更新をpatchToSP方式に)
+       - 土日はまとめ入力の行先デフォルト無し
+       - 車両マスタに登録者(owner)を記録
+     ============================================================ -->
+<script>
+function loadMsalFallback(){
+  const s=document.createElement('script');
+  s.src='https://cdn.jsdelivr.net/npm/@azure/msal-browser@2.38.3/lib/msal-browser.min.js';
+  s.onload=()=>{window._msalLoaded=true;};
+  document.head.appendChild(s);
+}
+</script>
+<script src="https://alcdn.msauth.net/browser/2.38.3/js/msal-browser.min.js" onload="window._msalLoaded=true" onerror="loadMsalFallback()" crossorigin="anonymous"></script>
+<style>
+:root{
+  --bg:#f0f2f5;--white:#fff;--border:#e2e5ea;
+  --accent:#2563c8;--accent-d:#1a4fa0;--accent-light:#e8f0fe;
+  --green:#16a34a;--green-light:#dcfce7;
+  --red:#dc2626;--red-light:#fee2e2;
+  --orange:#ea580c;--orange-light:#fff7ed;
+  --text:#111827;--text2:#6b7280;--text3:#9ca3af;
+  --shadow:0 1px 3px rgba(0,0,0,.1),0 1px 2px rgba(0,0,0,.06);
+  --shadow-md:0 4px 12px rgba(0,0,0,.1);
+  --shadow-lg:0 10px 30px rgba(0,0,0,.15);
+  --radius:12px;--radius-sm:8px;
+  --header-h:56px;--action-h:72px;
+}
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-system,'Hiragino Sans','Noto Sans JP',sans-serif;font-size:15px;}
+
+/* ====== LOADING ====== */
+#boot{position:fixed;inset:0;background:var(--accent);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:9999;color:#fff;}
+#boot .icon{font-size:56px;margin-bottom:16px;}
+#boot h1{font-size:20px;font-weight:700;margin-bottom:8px;}
+#boot p{font-size:13px;opacity:.8;}
+#boot .spinner{width:32px;height:32px;border:3px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite;margin-top:24px;}
+
+/* ====== LOGIN ====== */
+#login-screen{display:none;position:fixed;inset:0;background:var(--accent);align-items:center;justify-content:center;z-index:500;}
+.login-card{background:#fff;border-radius:20px;padding:40px 32px;text-align:center;width:min(360px,90vw);box-shadow:var(--shadow-lg);}
+.login-logo{font-size:48px;margin-bottom:12px;}
+.login-title{font-size:22px;font-weight:700;margin-bottom:6px;}
+.login-sub{font-size:13px;color:var(--text2);margin-bottom:28px;line-height:1.6;}
+.login-btn{width:100%;padding:15px;background:var(--accent);color:#fff;border:none;border-radius:10px;font-size:15px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:10px;}
+.login-error{margin-top:12px;padding:10px;background:var(--red-light);border-radius:8px;color:var(--red);font-size:13px;display:none;}
+
+/* ====== APP SHELL ====== */
+#app{display:none;height:100vh;display:none;flex-direction:column;}
+/* header */
+.app-header{height:var(--header-h);background:var(--white);border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 16px;gap:12px;position:sticky;top:0;z-index:100;box-shadow:var(--shadow);}
+.app-header .logo{font-size:18px;}
+.app-header h1{font-size:16px;font-weight:700;flex:1;}
+.app-header .user{font-size:11px;color:var(--text2);max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.sign-out-btn{padding:6px 12px;background:transparent;border:1.5px solid var(--border);border-radius:8px;color:var(--text2);font-size:12px;cursor:pointer;}
+
+/* action bar */
+.action-bar{background:var(--white);border-bottom:1px solid var(--border);padding:10px 12px;display:flex;gap:8px;position:sticky;top:var(--header-h);z-index:99;box-shadow:var(--shadow);}
+.action-btn{flex:1;padding:14px 8px;border:none;border-radius:var(--radius);font-size:14px;font-weight:700;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:3px;transition:transform .1s,opacity .1s;}
+.action-btn:active{transform:scale(.96);opacity:.9;}
+.action-btn .icon{font-size:22px;line-height:1;}
+.action-btn.dep{background:var(--accent);color:#fff;}
+.action-btn.arr{background:var(--green);color:#fff;}
+.action-btn.fuel{background:var(--orange);color:#fff;}
+
+/* tabs */
+.tabs{display:flex;background:var(--white);border-bottom:1px solid var(--border);overflow-x:auto;-webkit-overflow-scrolling:touch;}
+.tabs::-webkit-scrollbar{display:none;}
+.tab{padding:12px 16px;border:none;background:none;font-size:13px;color:var(--text2);cursor:pointer;border-bottom:2px solid transparent;white-space:nowrap;font-weight:500;}
+.tab.active{color:var(--accent);border-bottom-color:var(--accent);font-weight:700;}
+
+/* main */
+.main{flex:1;overflow-y:auto;padding:14px;-webkit-overflow-scrolling:touch;}
+.tab-page{display:none;}
+.tab-page.active{display:block;animation:fadeUp .2s ease;}
+@keyframes fadeUp{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+
+/* ====== CARDS ====== */
+.card{background:var(--white);border-radius:var(--radius);padding:16px;margin-bottom:12px;box-shadow:var(--shadow);}
+.card-title{font-size:12px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.8px;margin-bottom:12px;}
+
+/* stats */
+.stats-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:12px;}
+.stat{background:var(--white);border-radius:var(--radius);padding:14px;box-shadow:var(--shadow);text-align:center;}
+.stat .val{font-size:28px;font-weight:700;line-height:1.1;}
+.stat .lbl{font-size:11px;color:var(--text2);margin-top:3px;}
+.c-blue{color:var(--accent);}
+.c-green{color:var(--green);}
+.c-orange{color:var(--orange);}
+.c-red{color:var(--red);}
+
+/* unretired */
+.unreturned-card{background:var(--orange-light);border:1.5px solid var(--orange);border-radius:var(--radius);padding:14px;margin-bottom:12px;}
+.unreturned-title{font-size:13px;font-weight:700;color:var(--orange);margin-bottom:10px;}
+.unreturned-item{display:flex;align-items:center;gap:10px;padding:10px;background:#fff;border-radius:var(--radius-sm);margin-bottom:6px;box-shadow:var(--shadow);}
+.unreturned-item:last-child{margin-bottom:0;}
+.unreturned-info{flex:1;}
+.unreturned-vehicle{font-size:13px;font-weight:700;}
+.unreturned-meta{font-size:11px;color:var(--text2);margin-top:2px;}
+.arr-quick-btn{padding:8px 14px;background:var(--green);color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap;}
+
+/* table */
+.table-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;border-radius:var(--radius-sm);border:1px solid var(--border);}
+table{width:100%;border-collapse:collapse;font-size:13px;min-width:600px;}
+@media(min-width:768px){table{min-width:0;}}
+th{padding:9px 12px;text-align:left;font-size:11px;font-weight:700;color:var(--text2);background:#f8f9fb;border-bottom:1px solid var(--border);white-space:nowrap;}
+td{padding:10px 12px;border-bottom:1px solid var(--border);white-space:nowrap;}
+tr:last-child td{border-bottom:none;}
+tr:hover td{background:#f8f9fb;}
+.mono{font-family:'SF Mono','Courier New',monospace;}
+
+/* badges */
+.badge{display:inline-flex;align-items:center;padding:3px 8px;border-radius:20px;font-size:11px;font-weight:700;}
+.bg{background:var(--green-light);color:var(--green);}
+.br{background:var(--red-light);color:var(--red);}
+.bb{background:var(--accent-light);color:var(--accent);}
+.bo{background:var(--orange-light);color:var(--orange);}
+
+/* del with undo */
+.del-btn{background:none;border:none;cursor:pointer;color:var(--text3);font-size:16px;padding:4px 6px;border-radius:6px;}
+.del-btn:hover{color:var(--red);background:var(--red-light);}
+.undo-toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%) translateY(100px);background:#1f2937;color:#fff;padding:12px 20px;border-radius:10px;display:flex;align-items:center;gap:12px;font-size:13px;z-index:2000;transition:transform .3s ease;box-shadow:var(--shadow-lg);}
+.undo-toast.show{transform:translateX(-50%) translateY(0);}
+.undo-toast button{background:#f59e0b;color:#000;border:none;padding:5px 12px;border-radius:6px;font-weight:700;cursor:pointer;font-size:12px;}
+
+/* ====== MODALS ====== */
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:300;align-items:flex-end;justify-content:center;backdrop-filter:blur(4px);}
+.modal-overlay.open{display:flex;}
+.modal{background:var(--white);border-radius:20px 20px 0 0;padding:20px;width:100%;max-height:90vh;overflow-y:auto;animation:slideUp .25s ease;}
+@keyframes slideUp{from{transform:translateY(100%)}to{transform:translateY(0)}}
+.modal-handle{width:36px;height:4px;background:var(--border);border-radius:2px;margin:0 auto 16px;}
+.modal-title{font-size:18px;font-weight:700;margin-bottom:4px;}
+.modal-sub{font-size:13px;color:var(--text2);margin-bottom:18px;}
+
+/* forms */
+.field{margin-bottom:14px;}
+.field label{display:block;font-size:12px;font-weight:600;color:var(--text2);margin-bottom:6px;}
+.field input,.field select,.field textarea{
+  width:100%;padding:13px 14px;
+  background:var(--bg);border:1.5px solid var(--border);
+  border-radius:var(--radius-sm);color:var(--text);
+  font-family:inherit;font-size:16px;/* 16px prevents zoom on iOS */
+  transition:border-color .15s;}
+.field input:focus,.field select:focus,.field textarea:focus{outline:none;border-color:var(--accent);background:#fff;}
+.field textarea{resize:none;min-height:70px;}
+.field .hint{font-size:11px;color:var(--text3);margin-top:4px;}
+.odo-wrap{position:relative;}
+.odo-wrap input{padding-right:48px;}
+.cam-btn{position:absolute;right:10px;top:50%;transform:translateY(-50%);background:none;border:none;font-size:22px;cursor:pointer;color:var(--text2);}
+.cam-btn:active{color:var(--accent);}
+
+/* large submit btn */
+.submit-btn{width:100%;padding:16px;background:var(--accent);color:#fff;border:none;border-radius:var(--radius);font-size:16px;font-weight:700;cursor:pointer;margin-top:6px;transition:background .15s;}
+.submit-btn:active{background:var(--accent-d);}
+.submit-btn:disabled{background:#93b4e8;cursor:not-allowed;}
+.submit-btn.green{background:var(--green);}
+.submit-btn.orange{background:var(--orange);}
+.submit-btn.green:active{background:#15803d;}
+.submit-btn.orange:active{background:#c2410c;}
+
+/* alcohol section */
+.alc-section{background:var(--accent-light);border:1.5px solid var(--accent);border-radius:var(--radius-sm);margin-bottom:14px;overflow:hidden;}
+.alc-header{padding:12px 14px;display:flex;align-items:center;justify-content:space-between;cursor:pointer;user-select:none;}
+.alc-header span{font-size:13px;font-weight:700;color:var(--accent);pointer-events:none;}
+.alc-header .alc-arrow{font-size:14px;color:var(--accent);transition:transform .2s;pointer-events:none;}
+.alc-body{display:none;padding:0 14px 14px;}
+.alc-body.open{display:block;}
+.alc-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:6px;}
+.alc-divider{font-size:11px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.8px;margin:10px 0 8px;padding-top:10px;border-top:1px solid var(--border);}
+
+/* OCR modal */
+.ocr-area{border-radius:var(--radius);overflow:hidden;background:#000;aspect-ratio:4/3;margin-bottom:12px;position:relative;}
+#ocr-video{width:100%;height:100%;object-fit:cover;transform-origin:center;transition:transform .15s ease;}
+.zoom-controls{position:absolute;bottom:10px;right:10px;display:flex;flex-direction:column;gap:6px;z-index:10;}
+.zoom-btn{width:42px;height:42px;border-radius:50%;background:rgba(0,0,0,.6);color:#fff;border:1.5px solid rgba(255,255,255,.5);font-size:22px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;line-height:1;backdrop-filter:blur(8px);}
+.zoom-btn:active{background:rgba(0,0,0,.85);transform:scale(.95);}
+.zoom-display{position:absolute;top:10px;right:10px;background:rgba(0,0,0,.6);color:#fff;padding:5px 12px;border-radius:20px;font-size:12px;font-weight:700;font-family:monospace;backdrop-filter:blur(8px);}
+#ocr-canvas{display:none;}
+.ocr-guide{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none;}
+.ocr-box{border:2px solid rgba(255,255,255,.9);border-radius:8px;width:80%;height:45%;box-shadow:0 0 0 9999px rgba(0,0,0,.35);}
+.ocr-hint{position:absolute;bottom:10px;left:0;right:0;text-align:center;color:#fff;font-size:12px;opacity:.85;}
+.ocr-result{background:var(--accent-light);border:1.5px solid var(--accent);border-radius:var(--radius-sm);padding:14px;text-align:center;margin-bottom:12px;}
+.ocr-num{font-size:36px;font-weight:700;color:var(--accent);font-family:monospace;}
+.ocr-lbl{font-size:12px;color:var(--text2);margin-top:4px;}
+.ocr-loading{text-align:center;padding:24px;color:var(--text2);}
+.ocr-spin{font-size:30px;display:block;animation:spin 1s linear infinite;margin-bottom:8px;}
+
+/* destination datalist */
+datalist option{font-size:16px;}
+
+/* empty state */
+.empty{text-align:center;padding:36px 20px;color:var(--text3);}
+.empty-icon{font-size:36px;margin-bottom:8px;}
+.empty p{font-size:13px;}
+
+/* report bar */
+.rep-bar-wrap{margin-bottom:14px;}
+.rep-bar-label{display:flex;justify-content:space-between;font-size:13px;margin-bottom:4px;}
+.rep-bar-label span:first-child{font-weight:600;}
+.rep-bar-label span:last-child{color:var(--accent);font-weight:700;font-family:monospace;}
+.rep-bar-bg{background:var(--bg);border-radius:4px;height:8px;overflow:hidden;}
+.rep-bar-fill{height:100%;background:var(--accent);border-radius:4px;transition:width .4s ease;}
+
+/* undo progress */
+.undo-progress{height:3px;background:rgba(255,255,255,.3);border-radius:2px;margin-top:8px;overflow:hidden;}
+.undo-progress-fill{height:100%;background:#f59e0b;border-radius:2px;}
+
+/* warn */
+.warn-box{background:#fffbeb;border:1.5px solid #f59e0b;border-radius:var(--radius-sm);padding:12px;margin-top:8px;font-size:13px;color:#92400e;display:none;}
+
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* loading overlay */
+.loading-cover{display:none;position:fixed;inset:0;background:rgba(255,255,255,.75);z-index:400;align-items:center;justify-content:center;backdrop-filter:blur(2px);}
+.loading-cover.show{display:flex;}
+.loading-cover .spinner2{width:40px;height:40px;border:4px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .7s linear infinite;}
+
+/* today section */
+.today-header{font-size:13px;font-weight:700;color:var(--text2);margin-bottom:8px;padding:0 2px;}
+
+/* mobile layout helpers */
+@media(min-width:600px){
+  .main{padding:24px;max-width:1100px;margin:0 auto;}
+  .action-bar{justify-content:center;padding:14px 20px;}
+  .action-btn{max-width:200px;padding:18px 12px;}
+  .modal{max-width:560px;border-radius:20px;margin:auto;max-height:85vh;}
+  .modal-overlay{align-items:center;}
+  .stats-grid{grid-template-columns:repeat(4,1fr);}
+  .app-header{padding:0 24px;}
+  .app-header h1{font-size:18px;}
+  .tabs{padding:0 14px;}
+  /* Table improvements for PC */
+  table{font-size:14px;min-width:auto;width:100%;}
+  th,td{padding:12px 14px;}
+  /* Use grid for form fields on wider screens */
+  .field-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+  .field-grid .field{margin-bottom:0;}
+  .alc-row{grid-template-columns:1fr 1fr 1fr 1fr;}
+}
+@media(min-width:900px){
+  .main{padding:28px;max-width:1200px;}
+  .stats-grid{gap:16px;}
+  .stat{padding:20px;}
+  .stat .val{font-size:36px;}
+  .stat .lbl{font-size:13px;margin-top:6px;}
+  table{font-size:14px;}
+  .table-wrap{max-width:100%;}
+  .table-wrap table{font-size:13px;}
+  .table-wrap th,.table-wrap td{padding:11px 14px;}
+  .card{padding:20px;}
+  .card-title{font-size:13px;margin-bottom:16px;}
+  /* Today logs card */
+  .today-header{font-size:14px;margin-bottom:12px;}
+}
+</style>
+
+</head>
+<body>
+
+<!-- Boot -->
+<div id="boot"><div class="icon">🚗</div><h1>走行管理システム</h1><p>読み込み中...</p><div class="spinner"></div></div>
+
+<!-- Login -->
+<div id="login-screen" style="display:none;position:fixed;inset:0;background:var(--accent);align-items:center;justify-content:center;z-index:500;">
+  <div class="login-card">
+    <div class="login-logo">🚗</div>
+    <div class="login-title">走行管理システム</div>
+    <div class="login-sub">会社のMicrosoftアカウントでサインインしてください</div>
+    <button class="login-btn" onclick="signIn()">
+      <svg width="20" height="20" viewBox="0 0 21 21" fill="none"><rect x="1" y="1" width="9" height="9" fill="#F25022"/><rect x="11" y="1" width="9" height="9" fill="#7FBA00"/><rect x="1" y="11" width="9" height="9" fill="#00A4EF"/><rect x="11" y="11" width="9" height="9" fill="#FFB900"/></svg>
+      Microsoftアカウントでサインイン
+    </button>
+    <div class="login-error" id="login-error"></div>
+  </div>
+</div>
+
+<!-- App -->
+<div id="app" style="display:none;height:100vh;flex-direction:column;">
+  <div class="app-header">
+    <span class="logo">🚗</span>
+    <h1>走行管理 <span style="font-size:10px;font-weight:400;color:var(--text3);vertical-align:middle">v7.5</span></h1>
+    <span class="user" id="user-display"></span>
+    <button class="sign-out-btn" onclick="signOut()">ログアウト</button>
+  </div>
+
+  <!-- Quick action bar -->
+  <div class="action-bar" id="action-bar">
+    <button class="action-btn dep" onclick="openModal('dep')"><span class="icon">🚀</span><span>出発</span></button>
+    <button class="action-btn arr" onclick="openArrival()"><span class="icon">🏠</span><span>到着</span></button>
+    <button class="action-btn fuel" onclick="openModal('fuel')"><span class="icon">⛽</span><span>給油</span></button>
+  </div>
+
+  <div class="tabs">
+    <button class="tab active" onclick="switchTab('home')">🏠 ホーム</button>
+    <button class="tab" onclick="switchTab('logs')">📋 走行記録</button>
+    <button class="tab" onclick="switchTab('fuel-tab')">⛽ 給油</button>
+    <button class="tab" onclick="switchTab('bulk')">📝 まとめ入力</button>
+    <button class="tab" onclick="switchTab('report')">📊 レポート</button>
+    <button class="tab" onclick="switchTab('vehicles')">🚘 車両</button>
+  </div>
+
+  <div class="main" id="main-content">
+    <!-- HOME -->
+    <div class="tab-page active" id="tab-home">
+      <div id="home-stats" class="stats-grid"></div>
+      <div id="unreturned-section"></div>
+      <div id="today-logs"></div>
+    </div>
+
+    <!-- LOGS（自分のみ） -->
+    <div class="tab-page" id="tab-logs">
+      <div class="card">
+        <div class="card-title" style="display:flex;justify-content:space-between;align-items:center">
+          <span>走行履歴 <span style="font-size:11px;color:var(--text2);font-weight:400">（自分の記録のみ）</span></span>
+          <button class="sign-out-btn" onclick="exportCSV('log')">📥 CSV</button>
+        </div>
+        <div class="table-wrap" id="logs-table"></div>
+      </div>
+    </div>
+
+    <!-- FUEL TAB（自分のみ） -->
+    <div class="tab-page" id="tab-fuel-tab">
+      <div class="card">
+        <div class="card-title" style="display:flex;justify-content:space-between;align-items:center">
+          <span>給油履歴 <span style="font-size:11px;color:var(--text2);font-weight:400">（自分の記録のみ）</span></span>
+          <button class="sign-out-btn" onclick="exportCSV('fuel')">📥 CSV</button>
+        </div>
+        <div class="table-wrap" id="fuel-table"></div>
+      </div>
+    </div>
+
+
+    <!-- BULK ENTRY まとめ入力 -->
+    <div class="tab-page" id="tab-bulk">
+      <div class="card" style="margin-bottom:10px">
+        <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+          まとめ入力
+          <div style="display:flex;align-items:center;gap:8px">
+            <button class="sign-out-btn" onclick="bulkPrevMonth()">◀</button>
+            <span id="bulk-month-label" style="font-size:13px;font-weight:700;color:var(--accent)"></span>
+            <button class="sign-out-btn" onclick="bulkNextMonth()">▶</button>
+          </div>
+        </div>
+        <div id="bulk-summary" style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px"></div>
+        <div style="font-size:11px;color:var(--text2);margin-bottom:10px;padding:8px;background:var(--accent-light);border-radius:var(--radius-sm)">
+          💡 出発km・到着kmを入力すると走行距離を自動計算。前の行の到着kmが次行の出発kmに引き継がれます。行先が前回と同じなら距離も自動入力されます。
+        </div>
+        <div id="bulk-table-wrap" style="overflow-x:auto;border:1px solid var(--border);border-radius:var(--radius-sm);"></div>
+        <div style="display:flex;gap:8px;margin-top:12px">
+          <button class="submit-btn" style="background:var(--text2);flex:.4;font-size:13px" onclick="bulkSaveDraft()">💾 下書き</button>
+          <button class="submit-btn" style="flex:.6;font-size:13px" id="bulk-submit-btn" onclick="bulkSubmit()">☁ 走行記録を更新</button>
+        </div>
+        <div style="font-size:11px;color:var(--text3);text-align:center;margin-top:6px">出発km・到着kmを入力した行のみ登録されます</div>
+      </div>
+    </div>
+
+    <!-- REPORT（全員共有＋個人フィルター） -->
+    <div class="tab-page" id="tab-report">
+      <div class="card">
+        <div class="card-title">レポート <span style="font-size:11px;color:var(--text2);font-weight:400">（全員分）</span></div>
+        <div class="field" style="margin-bottom:10px">
+          <label style="font-size:11px">ドライバーで絞り込み</label>
+          <select id="rep-driver-filter"><option value="">全員</option></select>
+        </div>
+        <div style="display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap">
+          <div class="field" style="flex:1;margin:0;min-width:160px"><label style="font-size:11px">月を選択</label><input type="month" id="rep-month"></div>
+          <button class="submit-btn" style="width:auto;padding:13px 18px;margin:0;align-self:flex-end" onclick="generateReport()">📊 月次レポート生成</button>
+        </div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap">
+          <div class="field" style="flex:1;margin:0;min-width:140px"><label style="font-size:11px">年度を選択</label>
+            <select id="rep-year"></select>
+          </div>
+          <button class="submit-btn green" style="width:auto;padding:13px 18px;margin:0;align-self:flex-end" onclick="generateYearReport()">📅 年度レポート生成</button>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap">
+          <button class="submit-btn" style="flex:1;background:#dc2626;min-width:130px" onclick="exportReportPDF()">📄 PDF出力（このページ）</button>
+        </div>
+      </div>
+      <div id="report-area"></div>
+    </div>
+
+    <!-- VEHICLES -->
+    <div class="tab-page" id="tab-vehicles">
+      <div class="card">
+        <div class="card-title">車両を登録 <span style="font-size:11px;color:var(--text2);font-weight:400">（全員共有）</span></div>
+        <div class="field"><label>ナンバープレート</label><input type="text" id="v-plate" placeholder="例: 品川500あ1234"></div>
+        <div class="field"><label>車名</label><input type="text" id="v-name" placeholder="例: トヨタ ハイエース"></div>
+        <div class="field"><label>運転者</label><input type="text" id="v-driver" placeholder="例: 山端 晋輔"></div>
+        <div class="field"><label>部署</label><input type="text" id="v-dept" placeholder="例: 営業部"></div>
+        <div class="field"><label>目標燃費 (km/L)</label><input type="number" id="v-target" placeholder="例: 12.0" step="0.1" min="0"></div>
+        <button class="submit-btn" id="v-submit" onclick="addVehicle()">＋ 車両を追加</button>
+      </div>
+      <div class="card">
+        <div class="card-title">登録車両一覧</div>
+        <div id="vehicle-list-content"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Loading cover -->
+<div class="loading-cover" id="loading-cover"><div class="spinner2"></div></div>
+
+<!-- Undo toast -->
+<div class="undo-toast" id="undo-toast">
+  <span id="undo-msg">削除しました</span>
+  <button onclick="undoDelete()">元に戻す</button>
+  <div class="undo-progress"><div class="undo-progress-fill" id="undo-fill"></div></div>
+</div>
+
+<!-- ========== MODALS ========== -->
+
+<!-- DEPARTURE -->
+<div class="modal-overlay" id="modal-dep">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div class="modal-title">🚀 出発登録</div>
+    <div class="modal-sub">車両を選んでkmを入力するだけ</div>
+    <div class="field">
+      <label>車両 *</label>
+      <select id="dep-vehicle" onchange="onDepVehicleChange()">
+        <option value="">車両を選択</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>ドライバー</label>
+      <input type="text" id="dep-driver" placeholder="氏名">
+    </div>
+    <div class="field">
+      <label>行先</label>
+      <input type="text" id="dep-dest" placeholder="例: 本社" list="dest-history" autocomplete="off">
+      <datalist id="dest-history"></datalist>
+    </div>
+    <div class="field">
+      <label>出発時 走行距離 (km)</label>
+      <div class="odo-wrap">
+        <input type="number" id="dep-odo" placeholder="例: 12500" min="0" inputmode="numeric">
+        <button class="cam-btn" onclick="openOCR('dep-odo')">📷</button>
+      </div>
+      <div class="warn-box" id="dep-odo-warn"></div>
+    </div>
+
+    <!-- Alcohol -->
+    <div class="alc-section">
+      <div class="alc-header" id="alc-dep-header">
+        <span>🍺 アルコールチェック（タップで開く）</span>
+        <span class="alc-arrow">▼</span>
+      </div>
+      <div class="alc-body" id="alc-dep-body">
+        <div class="alc-divider">乗車前</div>
+        <div class="alc-row">
+          <div class="field" style="margin:0"><label>時刻</label><input type="time" id="dep-alc-bt"></div>
+          <div class="field" style="margin:0"><label>検知器</label>
+            <select id="dep-alc-bd"><option value="あり">あり</option><option value="なし">なし</option></select>
+          </div>
+        </div>
+        <div class="alc-row">
+          <div class="field" style="margin:0"><label>測定(mg/L)</label><input type="number" id="dep-alc-br" placeholder="0.00" step="0.01" min="0" inputmode="decimal"></div>
+          <div class="field" style="margin:0"><label>酒気帯び</label>
+            <select id="dep-alc-bk"><option value="なし">なし</option><option value="あり">あり</option></select>
+          </div>
+        </div>
+        <div class="field" style="margin:0 0 10px"><label>確認方法</label>
+          <select id="dep-alc-bm"><option value="対面">対面</option><option value="LINEビデオ通話">LINEビデオ通話</option><option value="遠隔検知">遠隔検知</option></select>
+        </div>
+        <div class="field" style="margin:0 0 6px"><label>確認者</label><input type="text" id="dep-alc-bc" placeholder="確認者氏名"></div>
+      </div>
+    </div>
+
+    <!-- 私用走行 (折りたたみ) -->
+    <div class="alc-section" style="background:#fef3c7;border-color:#f59e0b">
+      <div class="alc-header" id="priv-dep-header">
+        <span style="color:#92400e">🚙 私用走行（業務外利用時のみ）</span>
+        <span class="alc-arrow" style="color:#92400e">▼</span>
+      </div>
+      <div class="alc-body" id="priv-dep-body">
+        <div class="field" style="margin:0 0 10px"><label>私用走行距離 (km)</label>
+          <input type="number" id="dep-priv-dist" placeholder="例: 25" min="0" inputmode="numeric">
+          <div class="hint">業務外で使用した距離があれば入力</div>
+        </div>
+        <div class="field" style="margin:0 0 6px"><label>メモ</label>
+          <textarea id="dep-priv-memo" placeholder="例: 帰宅途中の私用立寄り" style="min-height:60px"></textarea>
+        </div>
+      </div>
+    </div>
+
+    <div style="display:flex;gap:10px">
+      <button class="submit-btn" style="background:var(--text3);flex:.4" onclick="closeModal('dep')">キャンセル</button>
+      <button class="submit-btn" style="flex:.6" id="dep-submit" onclick="saveDeparture()">出発を記録</button>
+    </div>
+  </div>
+</div>
+
+<!-- ARRIVAL -->
+<div class="modal-overlay" id="modal-arr">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div class="modal-title">🏠 到着登録</div>
+    <div class="modal-sub">到着するログを選んでkmを入力</div>
+    <div class="field">
+      <label>到着する記録を選択 *</label>
+      <select id="arr-select" onchange="onArrSelect()">
+        <option value="">選択してください</option>
+      </select>
+    </div>
+    <div id="arr-info" style="display:none;background:var(--bg);border-radius:var(--radius-sm);padding:12px;margin-bottom:14px;font-size:13px;"></div>
+    <div class="field">
+      <label>到着時 走行距離 (km) *</label>
+      <div class="odo-wrap">
+        <input type="number" id="arr-odo" placeholder="例: 12680" min="0" inputmode="numeric">
+        <button class="cam-btn" onclick="openOCR('arr-odo')">📷</button>
+      </div>
+      <div class="warn-box" id="arr-odo-warn"></div>
+    </div>
+
+    <!-- Alcohol after -->
+    <div class="alc-section">
+      <div class="alc-header" id="alc-arr-header">
+        <span>🍺 乗車後アルコール（タップで開く）</span>
+        <span class="alc-arrow">▼</span>
+      </div>
+      <div class="alc-body" id="alc-arr-body">
+        <div class="alc-divider">乗車後</div>
+        <div class="alc-row">
+          <div class="field" style="margin:0"><label>時刻</label><input type="time" id="arr-alc-at"></div>
+          <div class="field" style="margin:0"><label>検知器</label>
+            <select id="arr-alc-ad"><option value="あり">あり</option><option value="なし">なし</option></select>
+          </div>
+        </div>
+        <div class="alc-row">
+          <div class="field" style="margin:0"><label>測定(mg/L)</label><input type="number" id="arr-alc-ar" placeholder="0.00" step="0.01" min="0" inputmode="decimal"></div>
+          <div class="field" style="margin:0"><label>酒気帯び</label>
+            <select id="arr-alc-ak"><option value="なし">なし</option><option value="あり">あり</option></select>
+          </div>
+        </div>
+        <div class="field" style="margin:0 0 10px"><label>確認方法</label>
+          <select id="arr-alc-am"><option value="対面">対面</option><option value="LINEビデオ通話">LINEビデオ通話</option><option value="遠隔検知">遠隔検知</option></select>
+        </div>
+        <div class="field" style="margin:0 0 6px"><label>確認者</label><input type="text" id="arr-alc-ac" placeholder="確認者氏名"></div>
+      </div>
+    </div>
+
+    <div style="display:flex;gap:10px">
+      <button class="submit-btn" style="background:var(--text3);flex:.4" onclick="closeModal('arr')">キャンセル</button>
+      <button class="submit-btn green" style="flex:.6" id="arr-submit" onclick="saveArrival()">到着を記録</button>
+    </div>
+  </div>
+</div>
+
+<!-- FUEL -->
+<div class="modal-overlay" id="modal-fuel">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div class="modal-title">⛽ 給油記録</div>
+    <div class="modal-sub">車両と給油量を入力してください</div>
+    <div class="field"><label>日付 *</label><input type="date" id="fuel-date"></div>
+    <div class="field"><label>車両 *</label>
+      <select id="fuel-veh" onchange="onFuelVehicleChange()"><option value="">車両を選択</option></select>
+    </div>
+    <div class="field"><label>給油量 (L)</label><input type="number" id="fuel-liters" placeholder="例: 40.5" step="0.01" min="0" inputmode="decimal"></div>
+    <div class="field">
+      <label>走行距離計 (km)</label>
+      <div class="odo-wrap">
+        <input type="number" id="fuel-odo" placeholder="" min="0" inputmode="numeric">
+        <button class="cam-btn" onclick="openOCR('fuel-odo')">📷</button>
+      </div>
+    </div>
+    <div id="fuel-dist-hint" style="font-size:12px;color:var(--text2);margin:-10px 0 12px;display:none;"></div>
+    <div style="display:flex;gap:10px">
+      <button class="submit-btn" style="background:var(--text3);flex:.4" onclick="closeModal('fuel')">キャンセル</button>
+      <button class="submit-btn orange" style="flex:.6" id="fuel-submit" onclick="saveFuel()">給油を記録</button>
+    </div>
+  </div>
+</div>
+
+<!-- OCR MODAL -->
+<div class="modal-overlay" id="modal-ocr">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div class="modal-title" id="ocr-title">📷 走行距離を読み取り</div>
+    <div class="modal-sub">メーターの数字が枠内に入るように撮影してください</div>
+    <div id="ocr-step1">
+      <div class="ocr-area" id="ocr-camera-area">
+        <video id="ocr-video" autoplay playsinline muted></video>
+        <div class="ocr-guide"><div class="ocr-box"></div></div>
+        <div class="ocr-hint">ODO（総走行距離）が枠内に来るように</div>
+        <div class="zoom-display" id="zoom-display">1.0x</div>
+        <div class="zoom-controls">
+          <button class="zoom-btn" onclick="zoomCamera(0.5)" title="拡大">＋</button>
+          <button class="zoom-btn" onclick="zoomCamera(-0.5)" title="縮小">−</button>
+        </div>
+      </div>
+      <canvas id="ocr-canvas"></canvas>
+      <div style="display:flex;gap:10px;margin-top:10px">
+        <label class="submit-btn" style="background:#6b7280;cursor:pointer;text-align:center">
+          📁 画像を選択<input type="file" accept="image/*" onchange="handleOCRFile(event)" style="display:none">
+        </label>
+        <button class="submit-btn" id="ocr-shutter" onclick="captureOCR()">📸 撮影</button>
+      </div>
+    </div>
+    <div id="ocr-step2" style="display:none">
+      <img id="ocr-preview" style="width:100%;border-radius:var(--radius-sm);margin-bottom:12px" src="" alt="">
+      <div id="ocr-output"></div>
+      <div style="display:flex;gap:10px;margin-top:10px">
+        <button class="submit-btn" style="background:#6b7280;flex:.4" onclick="retakeOCR()">撮り直し</button>
+        <button class="submit-btn" id="ocr-use-btn" style="flex:.6;display:none" onclick="useOCRValue()">✓ この値を使用</button>
+      </div>
+    </div>
+    <button class="submit-btn" style="background:#6b7280;margin-top:10px" onclick="closeOCR()">キャンセル</button>
+  </div>
+</div>
+
+<!-- EDIT LOG MODAL -->
+<div class="modal-overlay" id="modal-edit-log">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div class="modal-title">✏️ 走行記録を編集</div>
+    <div class="modal-sub">変更したい項目を編集してください</div>
+    <input type="hidden" id="edit-log-id">
+    <div class="field"><label>日付</label><input type="date" id="edit-log-date"></div>
+    <div class="field"><label>車両</label><select id="edit-log-vehicle"><option value="">車両を選択</option></select></div>
+    <div class="field"><label>ドライバー</label><input type="text" id="edit-log-driver"></div>
+    <div class="field"><label>行先</label><input type="text" id="edit-log-dest" list="dest-history"></div>
+    <div class="field">
+      <label>出発時 走行距離 (km)</label>
+      <div class="odo-wrap"><input type="number" id="edit-log-depodo" min="0" inputmode="numeric" oninput="onEditArrOdoChange()"><button class="cam-btn" onclick="openOCR('edit-log-depodo')">📷</button></div>
+    </div>
+    <div class="field"><label>出発時刻</label><input type="time" id="edit-log-deptime"></div>
+    <div class="field">
+      <label>到着時 走行距離 (km)</label>
+      <div class="odo-wrap"><input type="number" id="edit-log-arrodo" min="0" inputmode="numeric" oninput="onEditArrOdoChange()"><button class="cam-btn" onclick="openOCR('edit-log-arrodo')">📷</button></div>
+    </div>
+    <div class="field"><label>到着時刻</label><input type="time" id="edit-log-arrtime"></div>
+    <div class="field" style="background:var(--accent-light);border:1.5px solid var(--accent);border-radius:8px;padding:12px">
+      <label style="color:var(--accent)">📏 走行距離 (km) — 編集すると到着kmが自動計算されます</label>
+      <input type="number" id="edit-log-dist" placeholder="例: 50" min="0" inputmode="numeric" oninput="onEditDistChange()">
+      <div class="hint">出発km + 走行距離 = 到着km</div>
+    </div>
+
+    <!-- アルコール編集 -->
+    <div class="alc-section">
+      <div class="alc-header" id="edit-alc-header">
+        <span>🍺 アルコールチェック（タップで開く）</span>
+        <span class="alc-arrow">▼</span>
+      </div>
+      <div class="alc-body" id="edit-alc-body">
+        <div class="alc-divider">乗車前</div>
+        <div class="alc-row">
+          <div class="field" style="margin:0"><label>時刻</label><input type="time" id="edit-alc-bt"></div>
+          <div class="field" style="margin:0"><label>検知器</label>
+            <select id="edit-alc-bd"><option value="あり">あり</option><option value="なし">なし</option></select>
+          </div>
+        </div>
+        <div class="alc-row">
+          <div class="field" style="margin:0"><label>測定(mg/L)</label><input type="number" id="edit-alc-br" step="0.01" min="0" inputmode="decimal"></div>
+          <div class="field" style="margin:0"><label>酒気帯び</label>
+            <select id="edit-alc-bk"><option value="なし">なし</option><option value="あり">あり</option></select>
+          </div>
+        </div>
+        <div class="field" style="margin:0 0 8px"><label>確認方法</label>
+          <select id="edit-alc-bm"><option value="対面">対面</option><option value="LINEビデオ通話">LINEビデオ通話</option><option value="遠隔検知">遠隔検知</option></select>
+        </div>
+        <div class="field" style="margin:0 0 10px"><label>確認者</label><input type="text" id="edit-alc-bc"></div>
+        <div class="alc-divider">乗車後</div>
+        <div class="alc-row">
+          <div class="field" style="margin:0"><label>時刻</label><input type="time" id="edit-alc-at"></div>
+          <div class="field" style="margin:0"><label>検知器</label>
+            <select id="edit-alc-ad"><option value="あり">あり</option><option value="なし">なし</option></select>
+          </div>
+        </div>
+        <div class="alc-row">
+          <div class="field" style="margin:0"><label>測定(mg/L)</label><input type="number" id="edit-alc-ar" step="0.01" min="0" inputmode="decimal"></div>
+          <div class="field" style="margin:0"><label>酒気帯び</label>
+            <select id="edit-alc-ak"><option value="なし">なし</option><option value="あり">あり</option></select>
+          </div>
+        </div>
+        <div class="field" style="margin:0 0 8px"><label>確認方法</label>
+          <select id="edit-alc-am"><option value="対面">対面</option><option value="LINEビデオ通話">LINEビデオ通話</option><option value="遠隔検知">遠隔検知</option></select>
+        </div>
+        <div class="field" style="margin:0 0 6px"><label>確認者</label><input type="text" id="edit-alc-ac"></div>
+      </div>
+    </div>
+    <!-- 私用走行 (編集) -->
+    <div class="alc-section" style="background:#fef3c7;border-color:#f59e0b">
+      <div class="alc-header" id="edit-priv-header">
+        <span style="color:#92400e">🚙 私用走行</span>
+        <span class="alc-arrow" style="color:#92400e">▼</span>
+      </div>
+      <div class="alc-body" id="edit-priv-body">
+        <div class="field" style="margin:0 0 10px"><label>私用走行距離 (km)</label>
+          <input type="number" id="edit-priv-dist" min="0" inputmode="numeric">
+        </div>
+        <div class="field" style="margin:0 0 6px"><label>メモ</label>
+          <textarea id="edit-priv-memo" style="min-height:60px"></textarea>
+        </div>
+      </div>
+    </div>
+
+    <div style="display:flex;gap:10px">
+      <button class="submit-btn" style="background:var(--text3);flex:.4" onclick="closeModal('edit-log')">キャンセル</button>
+      <button class="submit-btn" style="flex:.6" onclick="saveLogEdit()">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- EDIT FUEL MODAL -->
+<div class="modal-overlay" id="modal-edit-fuel">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div class="modal-title">✏️ 給油記録を編集</div>
+    <input type="hidden" id="edit-fuel-id">
+    <div class="field"><label>日付</label><input type="date" id="edit-fuel-date"></div>
+    <div class="field"><label>車両</label><select id="edit-fuel-veh"><option value="">車両を選択</option></select></div>
+    <div class="field"><label>給油量 (L)</label><input type="number" id="edit-fuel-liters" step="0.01" min="0" inputmode="decimal"></div>
+    <div class="field">
+      <label>走行距離計 (km)</label>
+      <div class="odo-wrap"><input type="number" id="edit-fuel-odo" min="0" inputmode="numeric"><button class="cam-btn" onclick="openOCR('edit-fuel-odo')">📷</button></div>
+    </div>
+    <div style="display:flex;gap:10px">
+      <button class="submit-btn" style="background:var(--text3);flex:.4" onclick="closeModal('edit-fuel')">キャンセル</button>
+      <button class="submit-btn orange" style="flex:.6" onclick="saveFuelEdit()">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- EDIT VEHICLE MODAL -->
+<div class="modal-overlay" id="modal-edit-vehicle">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div class="modal-title">✏️ 車両を編集</div>
+    <input type="hidden" id="edit-v-id">
+    <div class="field"><label>ナンバープレート</label><input type="text" id="edit-v-plate"></div>
+    <div class="field"><label>車名</label><input type="text" id="edit-v-name"></div>
+    <div class="field"><label>運転者</label><input type="text" id="edit-v-driver"></div>
+    <div class="field"><label>部署</label><input type="text" id="edit-v-dept"></div>
+    <div class="field"><label>目標燃費 (km/L)</label><input type="number" id="edit-v-target" step="0.1" min="0"></div>
+    <div style="display:flex;gap:10px">
+      <button class="submit-btn" style="background:var(--text3);flex:.4" onclick="closeModal('edit-vehicle')">キャンセル</button>
+      <button class="submit-btn" style="flex:.6" onclick="saveVehicleEdit()">保存</button>
+    </div>
+  </div>
+</div>
+
+<datalist id="dest-history"></datalist>
+
+<script>
+'use strict';
+
+// ===================================================
+// CONFIG
+// ===================================================
+const CLIENT_ID='c4ac340a-e75d-4850-93b9-66f386e9ded7';
+const TENANT_ID='34d3ed56-eff0-4386-863c-4611caad6ba9';
+const SCOPES=['User.Read','Sites.ReadWrite.All'];
+
+const SP_SITE_ID='1c913d64-3e26-4648-a4ec-e2c06579f7d8';
+const SP_LISTS={
+  log:'98bd507d-7cf7-4d85-b285-336d742ad368',
+  fuel:'b70ff770-69d6-4291-b6c5-7653570484bb',
+  vehicle:'55970f54-73d7-4ee4-a6a7-92dbc709d89b'
+};
+
+// ===================================================
+// STATE
+// ===================================================
+let msalApp=null,account=null,token=null;
+const cache={logs:[],fuels:[],vehicles:[]};
+// itemMap: appレコードID -> SharePoint数値ID のマッピング
+// BUG FIX: キーは必ずアプリ側のID(Title)で統一
+const itemMap={log:{},fuel:{},vehicle:{}};
+let undoStack=null,undoTimer=null,ocrTargetId=null,ocrStream=null,ocrValue=null;
+
+// ===================================================
+// HELPER: ログインユーザーのドライバー名
+// ===================================================
+function getMyDriverName(){
+  if(!account)return '';
+  // displayName優先、なければemailのローカル部
+  return account.name||account.username?.split('@')[0]||'';
+}
+
+// 所有者識別子（メールアドレス）。手入力に依存しない一意キー
+function getMyOwner(){
+  if(!account)return '';
+  return (account.username||'').toLowerCase();
+}
+
+// レコードが自分のものか判定。
+// owner列があればそれで判定。owner未設定の既存データはdriver名でフォールバック判定。
+function isMine(rec){
+  const myOwner=getMyOwner();
+  const myName=getMyDriverName();
+  if(!myOwner&&!myName)return true; // 未ログイン時は全件（保険）
+  if(rec.owner)return rec.owner.toLowerCase()===myOwner;
+  // owner未設定（既存データ）はdriver名で判定
+  return rec.driver===myName;
+}
+
+// ===================================================
+// MSAL
+// ===================================================
+async function bootApp(){
+  let attempts=0;
+  while((!window.msal||!window.msal.PublicClientApplication)&&attempts<50){
+    await sleep(100);attempts++;
+  }
+  if(!window.msal||!window.msal.PublicClientApplication){
+    document.getElementById('boot').innerHTML=`<div style="color:#fff;text-align:center;padding:20px"><div style="font-size:40px">⚠️</div><p style="margin-top:12px">MSALライブラリの読み込みに失敗しました。ネットワーク接続を確認してください。</p><button onclick="location.reload()" style="margin-top:16px;padding:10px 20px;background:#fff;border:none;border-radius:8px;cursor:pointer">再読み込み</button></div>`;
+    return;
+  }
+  try{
+    msalApp=new window.msal.PublicClientApplication({
+      auth:{clientId:CLIENT_ID,authority:`https://login.microsoftonline.com/${TENANT_ID}`,redirectUri:location.origin+location.pathname},
+      cache:{cacheLocation:'localStorage',storeAuthStateInCookie:false}
+    });
+    if(msalApp.initialize)await msalApp.initialize();
+    const resp=await msalApp.handleRedirectPromise();
+    if(resp&&resp.account){
+      // ★ ログイン直後はリダイレクト応答に含まれるトークンを直接使う
+      //   （ここで acquireTokenSilent を呼ぶと初回だけキャッシュ未温で失敗するため）
+      account=resp.account;msalApp.setActiveAccount(account);
+      if(resp.accessToken)token=resp.accessToken;
+      await startApp();
+    }
+    else{
+      const accounts=msalApp.getAllAccounts();
+      if(accounts.length>0){account=accounts[0];msalApp.setActiveAccount(account);await startApp();}
+      else{showLogin();}
+    }
+  }catch(e){
+    console.error(e);
+    document.getElementById('boot').innerHTML=`<div style="color:#fff;text-align:center;padding:20px"><div style="font-size:40px">⚠️</div><p style="margin-top:12px">初期化エラー: ${e.message}</p><button onclick="location.reload()" style="margin-top:16px;padding:10px 20px;background:#fff;border:none;border-radius:8px;cursor:pointer">再読み込み</button></div>`;
+  }
+}
+function showLogin(){
+  document.getElementById('boot').style.display='none';
+  const ls=document.getElementById('login-screen');
+  ls.style.display='flex';
+}
+async function signIn(){
+  try{await msalApp.loginRedirect({scopes:SCOPES});}
+  catch(e){
+    const el=document.getElementById('login-error');
+    el.textContent='サインインエラー: '+e.message;el.style.display='block';
+  }
+}
+function signOut(){msalApp.logoutRedirect();}
+async function getToken(){
+  try{const r=await msalApp.acquireTokenSilent({scopes:SCOPES,account});return r.accessToken;}
+  catch(e){
+    // 静かに取得できない場合のみリダイレクトで取得（ページ遷移するので以降は実行しない）
+    await msalApp.acquireTokenRedirect({scopes:SCOPES});
+    return new Promise(()=>{}); // 遷移完了まで待機（中途半端なトークンで先に進ませない）
+  }
+}
+
+// ===================================================
+// GRAPH API
+// ===================================================
+async function gGet(url){
+  const r=await fetch('https://graph.microsoft.com/v1.0'+url,{headers:{Authorization:'Bearer '+token}});
+  if(!r.ok)throw new Error(r.status+': '+await r.text());
+  return r.json();
+}
+async function gPut(url,body){
+  const r=await fetch('https://graph.microsoft.com/v1.0'+url,{method:'PUT',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify(body)});
+  if(!r.ok)throw new Error(r.status+': '+await r.text());
+  return r.json();
+}
+async function gPost(url,body){
+  const r=await fetch('https://graph.microsoft.com/v1.0'+url,{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify(body)});
+  if(!r.ok)throw new Error(r.status+': '+await r.text());
+  return r.json();
+}
+async function gPatch(url,body){
+  const r=await fetch('https://graph.microsoft.com/v1.0'+url,{method:'PATCH',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify(body)});
+  if(!r.ok)throw new Error(r.status+': '+await r.text());
+  return r.json();
+}
+
+// ===================================================
+// SharePoint Lists API
+// ===================================================
+
+// BUG FIX: readFileでitemMapのキーをTitle(appID)で確実に登録
+async function readFile(k){
+  const listId=SP_LISTS[k];
+  let all=[];
+  let url=`/sites/${SP_SITE_ID}/lists/${listId}/items?expand=fields&top=999`;
+  while(url){
+    const r=await gGet(url);
+    const items=r.value||[];
+    items.forEach(it=>{
+      const f=it.fields||{};
+      const rec=convertFromSP(k,f);
+      // appIDはTitleフィールド。Titleが空の場合はSP内部IDを使う
+      const appId=f.Title||String(it.id);
+      rec.id=appId;
+      // itemMapのキー = appId（Title）、値 = SP数値ID
+      itemMap[k][appId]=it.id;
+      if(!rec.deleted)all.push(rec);
+    });
+    const next=r['@odata.nextLink'];
+    if(next){
+      const idx=next.indexOf('/v1.0/');
+      url=idx>=0?next.substring(idx+5):null;
+    }else{url=null;}
+  }
+  return all;
+}
+
+// SharePoint フィールド → アプリレコード変換
+function convertFromSP(k,f){
+  if(k==='log'){
+    return {
+      depDate:f.depDate?f.depDate.slice(0,10):'',
+      arrDate:f.arrDate?f.arrDate.slice(0,10):'',
+      vehicle:f.vehicle||'',driver:f.driver||'',dest:f.dest||'',
+      owner:f.owner||'',
+      depOdo:f.depOdo!=null?Number(f.depOdo):null,
+      arrOdo:f.arrOdo!=null?Number(f.arrOdo):null,
+      dist:f.dist!=null?Number(f.dist):null,
+      depTime:f.depTime||'',arrTime:f.arrTime||'',
+      alcBt:f.alcBt||'',alcBd:f.alcBd||'',alcBr:f.alcBr!=null?Number(f.alcBr):null,
+      alcBk:f.alcBk||'',alcBc:f.alcBc||'',alcBm:f.alcBm||'',
+      alcAt:f.alcAt||'',alcAd:f.alcAd||'',alcAr:f.alcAr!=null?Number(f.alcAr):null,
+      alcAk:f.alcAk||'',alcAc:f.alcAc||'',alcAm:f.alcAm||'',
+      privDist:f.privDist!=null?Number(f.privDist):null,privMemo:f.privMemo||'',memo:f.memo||'',
+      deleted:f.deleted===true||f.deleted==='true'
+    };
+  }
+  if(k==='fuel'){
+    return {
+      date:f.date?f.date.slice(0,10):'',
+      vehicle:f.vehicle||'',
+      liters:f.liters!=null?Number(f.liters):null,
+      odo:f.odo!=null?Number(f.odo):null,
+      driver:f.driver||'',
+      owner:f.owner||'',
+      deleted:f.deleted===true||f.deleted==='true'
+    };
+  }
+  if(k==='vehicle'){
+    return {plate:f.plate||'',name:f.name||'',dept:f.dept||'',
+      driver:f.driver||'',
+      target:f.target!=null?Number(f.target):null,
+      owner:f.owner||'',registeredBy:f.registeredBy||''};
+  }
+}
+
+// アプリレコード → SharePoint フィールド変換
+function convertToSP(k,rec){
+  if(k==='log'){
+    const f={Title:rec.id};
+    if(rec.depDate!=null)f.depDate=rec.depDate;
+    if(rec.arrDate!=null)f.arrDate=rec.arrDate;
+    if(rec.vehicle!=null)f.vehicle=rec.vehicle;
+    if(rec.driver!=null)f.driver=rec.driver;
+    if(rec.owner!=null)f.owner=rec.owner;
+    if(rec.dest!=null)f.dest=rec.dest;
+    if(rec.depOdo!=null)f.depOdo=rec.depOdo;
+    if(rec.arrOdo!=null)f.arrOdo=rec.arrOdo;
+    if(rec.dist!=null)f.dist=rec.dist;
+    if(rec.depTime!=null)f.depTime=rec.depTime;
+    if(rec.arrTime!=null)f.arrTime=rec.arrTime;
+    if(rec.alcBt!=null)f.alcBt=rec.alcBt;
+    if(rec.alcBd!=null)f.alcBd=rec.alcBd;
+    if(rec.alcBr!=null)f.alcBr=rec.alcBr;
+    if(rec.alcBk!=null)f.alcBk=rec.alcBk;
+    if(rec.alcBc!=null)f.alcBc=rec.alcBc;
+    if(rec.alcBm!=null)f.alcBm=rec.alcBm;
+    if(rec.alcAt!=null)f.alcAt=rec.alcAt;
+    if(rec.alcAd!=null)f.alcAd=rec.alcAd;
+    if(rec.alcAr!=null)f.alcAr=rec.alcAr;
+    if(rec.alcAk!=null)f.alcAk=rec.alcAk;
+    if(rec.alcAc!=null)f.alcAc=rec.alcAc;
+    if(rec.alcAm!=null)f.alcAm=rec.alcAm;
+    if(rec.privDist!=null)f.privDist=rec.privDist;
+    if(rec.privMemo!=null)f.privMemo=rec.privMemo;
+    if(rec.memo!=null)f.memo=rec.memo;
+    f.deleted=rec.deleted===true; // ★必ず明示送信（SP列の既定値「はい」で誤って削除扱いになるのを防止）
+    return f;
+  }
+  if(k==='fuel'){
+    const f={Title:rec.id};
+    if(rec.date)f.date=rec.date;
+    if(rec.vehicle!=null)f.vehicle=rec.vehicle;
+    if(rec.liters!=null)f.liters=rec.liters;
+    if(rec.odo!=null)f.odo=rec.odo;
+    if(rec.driver!=null)f.driver=rec.driver;
+    if(rec.owner!=null)f.owner=rec.owner;
+    f.deleted=rec.deleted===true; // ★必ず明示送信
+    return f;
+  }
+  if(k==='vehicle'){
+    const f={Title:rec.id};
+    if(rec.plate!=null)f.plate=rec.plate;
+    if(rec.name!=null)f.name=rec.name;
+    if(rec.dept!=null)f.dept=rec.dept;
+    if(rec.driver!=null)f.driver=rec.driver;
+    if(rec.target!=null)f.target=rec.target;
+    if(rec.owner!=null)f.owner=rec.owner;
+    if(rec.registeredBy!=null)f.registeredBy=rec.registeredBy;
+    // 車両マスタには deleted 列が無い（削除は完全削除）。deletedは送らない。
+    return f;
+  }
+}
+
+// BUG FIX: spAddでitemMapへ確実に登録 + Titleが正しくセットされているか確認
+async function spAdd(k,rec){
+  const listId=SP_LISTS[k];
+  const fields=convertToSP(k,rec);
+  // Titleに必ずappIDをセット
+  fields.Title=rec.id;
+  // 安全機構: SharePointに存在しない列が混じっていても、その列を除いて自動リトライ。
+  //          スキーマ不一致で「登録できない」状態を防ぐ（列不足はコンソールに警告）。
+  let r=null;
+  for(let attempt=0;attempt<8;attempt++){
+    try{
+      r=await gPost(`/sites/${SP_SITE_ID}/lists/${listId}/items`,{fields});
+      break;
+    }catch(e){
+      const m=String(e&&e.message||'').match(/Field '([^']+)' is not recognized/);
+      if(m&&m[1]&&Object.prototype.hasOwnProperty.call(fields,m[1])){
+        console.warn(`spAdd(${k}): 列 '${m[1]}' がSharePointに存在しないため除外して再試行します`);
+        delete fields[m[1]];
+        continue;
+      }
+      throw e; // 列不一致以外のエラーはそのまま通知
+    }
+  }
+  if(!r)throw new Error('登録に失敗しました（SharePointの列構成をご確認ください）');
+  // 登録後にSP数値IDをitemMapに保存
+  itemMap[k][rec.id]=r.id;
+  return r;
+}
+
+// spUpdate: 部分更新。patchに「含まれるキーだけ」をSPへ送る（他フィールドは一切触れない）
+async function spUpdate(k,recId,patch){
+  const listId=SP_LISTS[k];
+  let itemId=itemMap[k][recId];
+
+  // itemMapにない場合はSPからTitleで検索して取得
+  if(!itemId){
+    console.warn(`spUpdate: itemMap miss for ${k}/${recId}, searching SP...`);
+    try{
+      const searchUrl=`/sites/${SP_SITE_ID}/lists/${listId}/items?expand=fields&$filter=fields/Title eq '${encodeURIComponent(recId)}'&top=1`;
+      const res=await gGet(searchUrl);
+      if(res.value&&res.value.length>0){
+        itemId=res.value[0].id;
+        itemMap[k][recId]=itemId;
+        console.log(`spUpdate: found SP item ${itemId} for ${recId}`);
+      }
+    }catch(e){console.error('SP search failed:',e);}
+  }
+
+  if(!itemId)throw new Error(`SharePointアイテムが見つかりません (${k}/${recId})。再読み込みしてください。`);
+
+  // patchに含まれるキーだけを変換（含まれないフィールドはSP上で変更されない）
+  const f=patchToSP(k,patch);
+  return await gPatch(`/sites/${SP_SITE_ID}/lists/${listId}/items/${itemId}/fields`,f);
+}
+
+// 部分更新用: patchオブジェクトのキーだけをSPフィールドへ変換（null値も明示的に送る）
+function patchToSP(k,patch){
+  const f={};
+  // SPに送ってよいフィールドのホワイトリスト（kごと）
+  const allow={
+    log:['depDate','arrDate','vehicle','driver','owner','dest','depOdo','arrOdo','dist','depTime','arrTime',
+         'alcBt','alcBd','alcBr','alcBk','alcBc','alcBm','alcAt','alcAd','alcAr','alcAk','alcAc','alcAm',
+         'privDist','privMemo','memo','deleted'],
+    fuel:['date','vehicle','liters','odo','driver','owner','deleted'],
+    vehicle:['plate','name','dept','driver','target','owner','registeredBy']
+  }[k]||[];
+  for(const key of Object.keys(patch)){
+    if(key==='id')continue;
+    if(!allow.includes(key))continue;
+    // undefinedはスキップ、nullは「クリアしたい」意図として送信
+    if(patch[key]===undefined)continue;
+    f[key]=patch[key];
+  }
+  return f;
+}
+
+async function spDelete(k,recId){
+  return spUpdate(k,recId,{deleted:true});
+}
+
+async function appendItem(k,newItem){
+  return await spAdd(k,newItem);
+}
+
+// BUG FIX: updateItemでcacheも確実に更新
+async function updateItem(k,id,patch){
+  await spUpdate(k,id,patch);
+  const arr=k==='log'?cache.logs:k==='fuel'?cache.fuels:cache.vehicles;
+  const target=arr.find(r=>r.id===id);
+  if(target)Object.assign(target,patch);
+}
+
+async function loadAll(){
+  const[a,b,c]=await Promise.all([readFile('log'),readFile('fuel'),readFile('vehicle')]);
+  cache.logs=a;cache.fuels=b;cache.vehicles=c;
+}
+
+// ===================================================
+// START APP
+// ===================================================
+async function startApp(){
+  showLoading('データを読み込み中...');
+  try{
+    if(!token)token=await getToken();   // ★ ログイン直後にトークンがあれば再取得しない
+    if(!token){showLogin();return;}
+    await loadAll();
+    document.getElementById('boot').style.display='none';
+    document.getElementById('login-screen').style.display='none';
+    const app=document.getElementById('app');
+    app.style.display='flex';
+    document.getElementById('user-display').textContent=account.username;
+    initForms();
+    attachAlcoholToggles();
+    bulkInit();
+    render();
+  }catch(e){
+    console.error(e);
+    showLogin();
+    document.getElementById('login-error').textContent='読み込みエラー: '+e.message;
+    document.getElementById('login-error').style.display='block';
+  }finally{hideLoading();}
+}
+
+// ===================================================
+// RENDER
+// ===================================================
+function render(){
+  renderHome();
+  renderLogs();
+  renderFuelTable();
+  renderVehicleList();
+  populateVehicleSelects();
+  populateDestHistory();
+  populateYearSelect();
+  populateDriverFilter();
+}
+
+function renderHome(){
+  const today=todayStr(),month=today.slice(0,7);
+  const tl=cache.logs.filter(l=>l.depDate===today||l.arrDate===today);
+  const ml=cache.logs.filter(l=>l.depDate&&l.depDate.startsWith(month));
+  const td=ml.reduce((s,l)=>s+(l.dist||0),0);
+  const unreturned=cache.logs.filter(l=>l.depDate&&!l.arrDate&&!l.deleted);
+
+  document.getElementById('home-stats').innerHTML=`
+    <div class="stat"><div class="val c-blue">${unreturned.length}</div><div class="lbl">未到着</div></div>
+    <div class="stat"><div class="val c-green">${ml.length}</div><div class="lbl">今月走行回数</div></div>
+    <div class="stat"><div class="val c-orange">${fmtNum(td)}</div><div class="lbl">今月走行距離(km)</div></div>
+    <div class="stat"><div class="val">${cache.vehicles.length}</div><div class="lbl">登録車両</div></div>`;
+
+  let uHtml='';
+  if(unreturned.length>0){
+    uHtml=`<div class="unreturned-card"><div class="unreturned-title">⚠️ 未到着 ${unreturned.length}件</div>`;
+    unreturned.forEach(l=>{
+      uHtml+=`<div class="unreturned-item">
+        <div class="unreturned-info">
+          <div class="unreturned-vehicle">${esc(l.vehicle)}　${esc(l.driver)}</div>
+          <div class="unreturned-meta">出発 ${esc(l.depTime)} / ${esc(l.dest)||'行先未記入'} / 出発km: ${fmtNum(l.depOdo)}</div>
+        </div>
+        <button class="arr-quick-btn" onclick="quickArrival('${esc(l.id)}')">到着</button>
+      </div>`;
+    });
+    uHtml+='</div>';
+  }
+  document.getElementById('unreturned-section').innerHTML=uHtml;
+
+  const todayLogs=cache.logs.filter(l=>l.depDate===today&&!l.deleted).sort((a,b)=>(b.depTime||'').localeCompare(a.depTime||''));
+  let lHtml=`<div class="today-header">今日の記録 (${today})</div>`;
+  if(todayLogs.length===0){lHtml+='<div class="card"><div class="empty"><div class="empty-icon">📋</div><p>今日の記録はありません</p></div></div>';}
+  else{
+    lHtml+='<div class="card"><div class="table-wrap"><table><thead><tr><th>出発</th><th>到着</th><th>車両</th><th>行先</th><th>距離</th></tr></thead><tbody>';
+    todayLogs.forEach(l=>{
+      const dist=l.dist?`<span class="badge bg mono">+${l.dist}km</span>`:'<span class="badge bo">未到着</span>';
+      lHtml+=`<tr><td>${esc(l.depTime)}</td><td>${esc(l.arrTime)||'-'}</td><td>${esc(l.vehicle)}</td><td>${esc(l.dest)}</td><td>${dist}</td></tr>`;
+    });
+    lHtml+='</tbody></table></div></div>';
+  }
+  document.getElementById('today-logs').innerHTML=lHtml;
+}
+
+// BUG FIX: 自分のみ表示
+function renderLogs(){
+  const logs=[...cache.logs].filter(l=>!l.deleted&&isMine(l)).sort((a,b)=>(b.depDate||'').localeCompare(a.depDate||''));
+  const wrap=document.getElementById('logs-table');
+  if(!logs.length){wrap.innerHTML='<div class="empty"><div class="empty-icon">📋</div><p>走行記録がありません</p></div>';return;}
+  wrap.innerHTML=`<table><thead><tr>
+    <th>日付</th><th>車両</th><th>ドライバー</th><th>行先</th>
+    <th>出発km</th><th>到着km</th><th>距離</th><th>出発</th><th>到着</th><th></th>
+  </tr></thead><tbody>${logs.map(l=>{
+    const dist=l.dist?`<span class="badge bg mono">+${l.dist}km</span>`:'<span class="badge bo">未到着</span>';
+    return`<tr>
+      <td class="mono" style="color:var(--text2)">${esc(l.depDate)}</td>
+      <td><span class="badge bb">${esc(l.vehicle)}</span></td>
+      <td>${esc(l.driver)}</td><td>${esc(l.dest)}</td>
+      <td class="mono">${fmtNum(l.depOdo)}</td>
+      <td class="mono">${l.arrOdo?fmtNum(l.arrOdo):'-'}</td>
+      <td>${dist}</td>
+      <td style="color:var(--text2)">${esc(l.depTime)}</td>
+      <td style="color:var(--text2)">${esc(l.arrTime)||'-'}</td>
+      <td><button class="del-btn" onclick="editLog('${esc(l.id)}')" style="margin-right:4px">✏️</button><button class="del-btn" onclick="deleteLog('${esc(l.id)}')">🗑</button></td>
+    </tr>`;
+  }).join('')}</tbody></table>`;
+}
+
+// BUG FIX: 自分のみ表示
+function renderFuelTable(){
+  const fuels=[...cache.fuels].filter(f=>!f.deleted&&isMine(f)).sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+  const wrap=document.getElementById('fuel-table');
+  if(!fuels.length){wrap.innerHTML='<div class="empty"><div class="empty-icon">⛽</div><p>給油記録がありません</p></div>';return;}
+  wrap.innerHTML=`<table><thead><tr>
+    <th>日付</th><th>車両</th><th>給油量</th><th>走行距離計</th><th>燃費</th><th></th>
+  </tr></thead><tbody>${fuels.map(f=>{
+    const eff=calcFuelEff(f.vehicle,f.odo);
+    const effBadge=eff?`<span class="badge ${parseFloat(eff)>=12?'bg':'br'} mono">${eff}km/L</span>`:'<span style="color:var(--text3)">-</span>';
+    return`<tr>
+      <td class="mono" style="color:var(--text2)">${esc(f.date)}</td>
+      <td><span class="badge bb">${esc(f.vehicle)}</span></td>
+      <td class="mono">${f.liters?f.liters.toFixed(1)+' L':'-'}</td>
+      <td class="mono">${fmtNum(f.odo)}</td>
+      <td>${effBadge}</td>
+      <td><button class="del-btn" onclick="editFuel('${esc(f.id)}')" style="margin-right:4px">✏️</button><button class="del-btn" onclick="deleteFuel('${esc(f.id)}')">🗑</button></td>
+    </tr>`;
+  }).join('')}</tbody></table>`;
+}
+
+function renderVehicleList(){
+  const el=document.getElementById('vehicle-list-content');
+  if(!cache.vehicles.length){el.innerHTML='<div class="empty"><div class="empty-icon">🚘</div><p>車両が登録されていません</p></div>';return;}
+  el.innerHTML=`<table><thead><tr><th>ナンバー</th><th>車名</th><th>運転者</th><th>部署</th><th>目標燃費</th><th>累計km</th><th>登録者</th><th></th></tr></thead>
+  <tbody>${cache.vehicles.map(v=>{
+    const d=cache.logs.filter(l=>l.vehicle===v.plate&&!l.deleted).reduce((s,l)=>s+(l.dist||0),0);
+    return`<tr>
+      <td class="mono" style="color:var(--accent);font-weight:700">${esc(v.plate)}</td>
+      <td>${esc(v.name)}</td>
+      <td>${esc(v.driver)||'-'}</td>
+      <td style="color:var(--text2)">${esc(v.dept)||'-'}</td>
+      <td class="mono">${v.target?v.target+' km/L':'-'}</td>
+      <td class="mono">${fmtNum(d)} km</td>
+      <td style="color:var(--text2);font-size:12px">${esc(v.registeredBy)||'-'}</td>
+      <td><button class="del-btn" onclick="editVehicle('${esc(v.id)}')" style="margin-right:4px">✏️</button><button class="del-btn" onclick="deleteVehicle('${esc(v.id)}')">🗑</button></td>
+    </tr>`;
+  }).join('')}</tbody></table>`;
+}
+
+function populateVehicleSelects(){
+  ['dep-vehicle','arr-veh','fuel-veh'].forEach(id=>{
+    const el=document.getElementById(id);
+    if(!el)return;
+    const cur=el.value;
+    el.innerHTML='<option value="">車両を選択</option>';
+    cache.vehicles.forEach(v=>{el.innerHTML+=`<option value="${esc(v.plate)}">${esc(v.plate)}${v.name?' — '+esc(v.name):''}</option>`;});
+    if(cur)el.value=cur;
+  });
+  const arrSel=document.getElementById('arr-select');
+  if(arrSel){
+    const cur=arrSel.value;
+    arrSel.innerHTML='<option value="">選択してください</option>';
+    cache.logs.filter(l=>!l.arrDate&&!l.deleted&&l.depDate).forEach(l=>{
+      arrSel.innerHTML+=`<option value="${esc(l.id)}">${esc(l.vehicle)} ${l.driver?'('+esc(l.driver)+')':''} / ${esc(l.dest)||'行先未記入'} / 出発 ${esc(l.depTime)} / ${fmtNum(l.depOdo)}km</option>`;
+    });
+    if(cur)arrSel.value=cur;
+  }
+}
+
+function populateDestHistory(){
+  const dest_counts={};
+  cache.logs.forEach(l=>{if(l.dest)dest_counts[l.dest]=(dest_counts[l.dest]||0)+1;});
+  const sorted=Object.entries(dest_counts).sort((a,b)=>b[1]-a[1]).map(e=>e[0]);
+  const dl=document.getElementById('dest-history');
+  if(dl)dl.innerHTML=sorted.map(d=>`<option value="${esc(d)}">`).join('');
+}
+
+function populateDriverFilter(){
+  const sel=document.getElementById('rep-driver-filter');
+  if(!sel)return;
+  const cur=sel.value;
+  const drivers=[...new Set(cache.logs.filter(l=>!l.deleted&&l.driver).map(l=>l.driver))].sort();
+  sel.innerHTML='<option value="">全員</option>'+drivers.map(d=>`<option value="${esc(d)}">${esc(d)}</option>`).join('');
+  if(cur)sel.value=cur;
+}
+
+// ===================================================
+// FORMS
+// ===================================================
+function initForms(){
+  const now=new Date();
+  const hhmm=pad(now.getHours())+':'+pad(now.getMinutes());
+  document.getElementById('dep-alc-bt').value=hhmm;
+  const today=todayStr();
+  document.getElementById('fuel-date').value=today;
+  document.getElementById('rep-month').value=today.slice(0,7);
+
+  const last=getSaved('lastDep');
+  if(last){
+    if(last.driver)document.getElementById('dep-driver').value=last.driver;
+    if(last.alcBd)document.getElementById('dep-alc-bd').value=last.alcBd;
+    if(last.alcBk)document.getElementById('dep-alc-bk').value=last.alcBk;
+    if(last.alcBc)document.getElementById('dep-alc-bc').value=last.alcBc;
+    if(last.alcBm)document.getElementById('dep-alc-bm').value=last.alcBm;
+  }
+  // ドライバー欄をアカウント名で自動入力
+  const myName=getMyDriverName();
+  if(myName){
+    const driverInput=document.getElementById('dep-driver');
+    if(driverInput&&!driverInput.value)driverInput.value=myName;
+  }
+}
+
+function getSaved(k){try{return JSON.parse(localStorage.getItem(k)||'null');}catch{return null;}}
+function setSaved(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch{}}
+
+function onDepVehicleChange(){
+  const vid=document.getElementById('dep-vehicle').value;
+  if(!vid)return;
+  const vl=cache.logs.filter(l=>l.vehicle===vid&&!l.deleted).sort((a,b)=>(b.depDate||'').localeCompare(a.depDate||''));
+  if(vl.length>0){
+    const last=vl[0];
+    if(last.arrOdo)document.getElementById('dep-odo').value=last.arrOdo;
+    if(last.driver&&!document.getElementById('dep-driver').value)document.getElementById('dep-driver').value=last.driver;
+    if(last.dest)document.getElementById('dep-dest').value=last.dest;
+    if(last.alcBc)document.getElementById('dep-alc-bc').value=last.alcBc;
+    if(last.alcBd)document.getElementById('dep-alc-bd').value=last.alcBd;
+  }
+}
+
+function onArrSelect(){
+  const id=document.getElementById('arr-select').value;
+  const log=cache.logs.find(l=>l.id===id);
+  if(!log){document.getElementById('arr-info').style.display='none';return;}
+  document.getElementById('arr-info').style.display='block';
+  document.getElementById('arr-info').innerHTML=`
+    <b>${esc(log.vehicle)}</b>　${esc(log.driver)}　→　${esc(log.dest)}<br>
+    出発: ${esc(log.depTime)}　出発km: <b>${fmtNum(log.depOdo)}</b>`;
+  const now=new Date();
+  document.getElementById('arr-alc-at').value=pad(now.getHours())+':'+pad(now.getMinutes());
+  if(log.alcBd)document.getElementById('arr-alc-ad').value=log.alcBd;
+  if(log.alcBc)document.getElementById('arr-alc-ac').value=log.alcBc;
+}
+
+function onFuelVehicleChange(){
+  const vid=document.getElementById('fuel-veh').value;
+  if(!vid)return;
+  const vl=cache.logs.filter(l=>l.vehicle===vid&&l.arrOdo&&!l.deleted).sort((a,b)=>(b.depDate||'').localeCompare(a.depDate||''));
+  const hint=document.getElementById('fuel-dist-hint');
+  if(vl.length>0){
+    const last=vl[0];
+    document.getElementById('fuel-odo').placeholder=`前回到着: ${fmtNum(last.arrOdo)} km`;
+    hint.textContent=`最新到着km: ${fmtNum(last.arrOdo)} km (${last.depDate||''})`;
+    hint.style.display='block';
+  }else{hint.style.display='none';}
+}
+
+// ===================================================
+// SAVE DEPARTURE
+// ===================================================
+async function saveDeparture(){
+  const vehicle=document.getElementById('dep-vehicle').value;
+  const driver=document.getElementById('dep-driver').value.trim()||getMyDriverName();
+  const dest=document.getElementById('dep-dest').value.trim();
+  const depOdo=parseFloat(document.getElementById('dep-odo').value)||null;
+  if(!vehicle){showToast('車両を選択してください','error');return;}
+  if(depOdo&&!validateOdo(depOdo,'dep'))return;
+
+  const now=new Date();
+  const id=uid();
+  const entry={
+    id,vehicle,driver,dest,depOdo,
+    owner:getMyOwner(),
+    depDate:todayStr(),
+    depTime:pad(now.getHours())+':'+pad(now.getMinutes()),
+    alcBt:document.getElementById('dep-alc-bt').value,
+    alcBd:document.getElementById('dep-alc-bd').value,
+    alcBr:parseFloat(document.getElementById('dep-alc-br').value)||null,
+    alcBk:document.getElementById('dep-alc-bk').value,
+    alcBc:document.getElementById('dep-alc-bc').value,
+    alcBm:document.getElementById('dep-alc-bm').value,
+    privDist:parseFloat(document.getElementById('dep-priv-dist').value)||null,
+    privMemo:document.getElementById('dep-priv-memo').value,
+  };
+
+  const btn=document.getElementById('dep-submit');btn.disabled=true;
+  showLoading('出発を記録中...');
+  try{
+    await appendItem('log',entry);
+    cache.logs.push(entry);
+    setSaved('lastDep',{driver,alcBd:entry.alcBd,alcBk:entry.alcBk,alcBc:entry.alcBc,alcBm:entry.alcBm});
+    setSaved('lastVehicle',vehicle);
+    closeModal('dep');
+    render();
+    showToast('出発を記録しました 🚀','success');
+    document.getElementById('dep-odo').value='';
+    document.getElementById('dep-dest').value='';
+    document.getElementById('dep-priv-dist').value='';
+    document.getElementById('dep-priv-memo').value='';
+  }catch(e){showToast('保存失敗: '+e.message+' （保存されていません。電波の良い場所で再度お試しください）','error');}
+  finally{btn.disabled=false;hideLoading();}
+}
+
+// ===================================================
+// SAVE ARRIVAL
+// ===================================================
+async function saveArrival(){
+  const logId=document.getElementById('arr-select').value;
+  const arrOdo=parseFloat(document.getElementById('arr-odo').value);
+  if(!logId){showToast('到着する記録を選択してください','error');return;}
+  if(isNaN(arrOdo)){showToast('到着走行距離を入力してください','error');return;}
+
+  const log=cache.logs.find(l=>l.id===logId);
+  if(!log){showToast('記録が見つかりません','error');return;}
+  if(!validateOdoArrival(log.depOdo,arrOdo))return;
+
+  const now=new Date();
+  const dist=log.depOdo!=null?Math.round(arrOdo-log.depOdo):null;
+
+  const btn=document.getElementById('arr-submit');btn.disabled=true;
+  showLoading('到着を記録中...');
+  try{
+    const patch={
+      arrOdo,
+      arrDate:todayStr(),
+      arrTime:pad(now.getHours())+':'+pad(now.getMinutes()),
+      dist,
+      alcAt:document.getElementById('arr-alc-at').value,
+      alcAd:document.getElementById('arr-alc-ad').value,
+      alcAr:parseFloat(document.getElementById('arr-alc-ar').value)||null,
+      alcAk:document.getElementById('arr-alc-ak').value,
+      alcAc:document.getElementById('arr-alc-ac').value,
+      alcAm:document.getElementById('arr-alc-am')?document.getElementById('arr-alc-am').value:''
+    };
+    // BUG FIX: まずSPに書き込み、成功したらcacheを更新
+    await updateItem('log',log.id,patch);
+    closeModal('arr');
+    render();
+    showToast(`到着を記録しました 🏠 走行距離: +${dist!=null?dist:'?'}km`,'success');
+    document.getElementById('arr-odo').value='';
+    document.getElementById('arr-select').value='';
+    document.getElementById('arr-info').style.display='none';
+  }catch(e){
+    showToast('保存失敗: '+e.message,'error');
+    console.error('saveArrival error:',e);
+  }
+  finally{btn.disabled=false;hideLoading();}
+}
+
+async function quickArrival(logId){
+  openModal('arr');
+  await sleep(100);
+  document.getElementById('arr-select').value=logId;
+  onArrSelect();
+}
+
+// ===================================================
+// SAVE FUEL
+// ===================================================
+async function saveFuel(){
+  const date=document.getElementById('fuel-date').value;
+  const vehicle=document.getElementById('fuel-veh').value;
+  const liters=parseFloat(document.getElementById('fuel-liters').value)||null;
+  const odo=parseFloat(document.getElementById('fuel-odo').value)||null;
+  if(!date||!vehicle){showToast('日付と車両は必須です','error');return;}
+  const entry={id:uid(),date,vehicle,liters,odo,driver:getMyDriverName(),owner:getMyOwner()};
+  const btn=document.getElementById('fuel-submit');btn.disabled=true;
+  showLoading('給油を記録中...');
+  try{
+    await appendItem('fuel',entry);
+    cache.fuels.push(entry);
+    closeModal('fuel');
+    render();
+    showToast('給油を記録しました ⛽','success');
+    document.getElementById('fuel-liters').value='';
+    document.getElementById('fuel-odo').value='';
+  }catch(e){showToast('保存失敗: '+e.message+' （保存されていません。電波の良い場所で再度お試しください）','error');}
+  finally{btn.disabled=false;hideLoading();}
+}
+
+// ===================================================
+// ADD VEHICLE
+// ===================================================
+async function addVehicle(){
+  const plate=document.getElementById('v-plate').value.trim();
+  const name=document.getElementById('v-name').value.trim();
+  const driver=document.getElementById('v-driver').value.trim();
+  const dept=document.getElementById('v-dept').value.trim();
+  const target=parseFloat(document.getElementById('v-target').value)||null;
+  if(!plate||!name){showToast('ナンバーと車名は必須です','error');return;}
+  // 車両は全員共有。ownerは「登録者の記録」として保存(表示フィルタには使わない)
+  const entry={id:uid(),plate,name,driver,dept,target,owner:getMyOwner(),registeredBy:getMyDriverName()};
+  const btn=document.getElementById('v-submit');btn.disabled=true;
+  showLoading('登録中...');
+  try{
+    await appendItem('vehicle',entry);
+    cache.vehicles.push(entry);
+    render();
+    showToast('車両を登録しました ✓','success');
+    ['v-plate','v-name','v-driver','v-dept','v-target'].forEach(id=>document.getElementById(id).value='');
+  }catch(e){showToast('登録失敗: '+e.message,'error');}
+  finally{btn.disabled=false;hideLoading();}
+}
+
+// ===================================================
+// DELETE WITH UNDO
+// ===================================================
+function deleteLog(id){
+  const log=cache.logs.find(l=>l.id===id);
+  if(!log)return;
+  log.deleted=true;
+  showUndoToast('走行記録を削除しました',async()=>{
+    delete log.deleted;
+    await spUpdate('log',id,{deleted:false});
+    render();
+  },async()=>{
+    await spUpdate('log',id,{deleted:true});
+    cache.logs=cache.logs.filter(l=>l.id!==id);
+  });
+  render();
+}
+function deleteFuel(id){
+  const f=cache.fuels.find(f=>f.id===id);
+  if(!f)return;
+  f.deleted=true;
+  showUndoToast('給油記録を削除しました',async()=>{
+    delete f.deleted;
+    await spUpdate('fuel',id,{deleted:false});
+    render();
+  },async()=>{
+    await spUpdate('fuel',id,{deleted:true});
+    cache.fuels=cache.fuels.filter(x=>x.id!==id);
+  });
+  render();
+}
+async function deleteVehicle(id){
+  const v=cache.vehicles.find(v=>v.id===id);
+  if(!v)return;
+  if(!confirm(`「${v.plate}」を削除しますか？`))return;
+  try{
+    const listId=SP_LISTS.vehicle;
+    const itemId=itemMap.vehicle[id];
+    if(itemId){
+      await fetch(`https://graph.microsoft.com/v1.0/sites/${SP_SITE_ID}/lists/${listId}/items/${itemId}`,{method:'DELETE',headers:{Authorization:'Bearer '+token}});
+    }
+    cache.vehicles=cache.vehicles.filter(x=>x.id!==id);
+    render();
+  }catch(e){showToast('削除失敗: '+e.message,'error');}
+}
+
+// ===================================================
+// UNDO TOAST
+// ===================================================
+function showUndoToast(msg,onUndo,onConfirm){
+  if(undoTimer){clearTimeout(undoTimer);if(undoStack)undoStack.confirm();}
+  undoStack={undo:onUndo,confirm:onConfirm};
+  const toast=document.getElementById('undo-toast');
+  const fill=document.getElementById('undo-fill');
+  document.getElementById('undo-msg').textContent=msg;
+  toast.classList.add('show');
+  fill.style.transition='none';fill.style.width='100%';
+  requestAnimationFrame(()=>{
+    fill.style.transition='width 5s linear';
+    fill.style.width='0%';
+  });
+  undoTimer=setTimeout(async()=>{
+    toast.classList.remove('show');
+    if(undoStack){await undoStack.confirm();undoStack=null;}
+  },5000);
+}
+async function undoDelete(){
+  if(undoTimer)clearTimeout(undoTimer);
+  document.getElementById('undo-toast').classList.remove('show');
+  if(undoStack){await undoStack.undo();undoStack=null;}
+}
+
+// ===================================================
+// VALIDATE ODO
+// ===================================================
+function validateOdo(odo,prefix){
+  const warn=document.getElementById(prefix+'-odo-warn');
+  if(!warn)return true;
+  if(odo>999999||odo<0){
+    warn.textContent='走行距離が異常値です。確認してください。';
+    warn.style.display='block';
+    return false;
+  }
+  warn.style.display='none';
+  return true;
+}
+function validateOdoArrival(depOdo,arrOdo){
+  const warn=document.getElementById('arr-odo-warn');
+  if(depOdo!=null&&arrOdo<depOdo){
+    warn.textContent='到着kmは出発kmより大きい値を入力してください。';
+    warn.style.display='block';return false;
+  }
+  if(depOdo!=null&&(arrOdo-depOdo)>500){
+    warn.textContent=`走行距離が${arrOdo-depOdo}kmです。正しいですか？`;
+    warn.style.display='block';
+    return confirm(`走行距離が${arrOdo-depOdo}kmです。正しいですか？`);
+  }
+  if(warn)warn.style.display='none';
+  return true;
+}
+
+// ===================================================
+// FUEL EFFICIENCY
+// ===================================================
+function calcFuelEff(vehicle,atOdo){
+  if(!vehicle||!atOdo)return null;
+  const sorted=cache.fuels.filter(f=>f.vehicle===vehicle&&f.odo&&!f.deleted).sort((a,b)=>a.odo-b.odo);
+  for(let i=1;i<sorted.length;i++){
+    if(Number(sorted[i].odo)===Number(atOdo)){
+      const d=sorted[i].odo-sorted[i-1].odo;
+      if(d>0&&sorted[i].liters>0)return (d/sorted[i].liters).toFixed(1);
+    }
+  }
+  return null;
+}
+
+// ===================================================
+// REPORT
+// ===================================================
+function generateReport(){
+  const month=document.getElementById('rep-month').value;
+  if(!month)return;
+  const driverFilter=document.getElementById('rep-driver-filter')?.value||'';
+  let logs=cache.logs.filter(l=>l.depDate&&l.depDate.startsWith(month)&&!l.deleted);
+  let fuels=cache.fuels.filter(f=>f.date&&f.date.startsWith(month)&&!f.deleted);
+  if(driverFilter){logs=logs.filter(l=>l.driver===driverFilter);fuels=fuels.filter(f=>f.driver===driverFilter);}
+  const driverLabel=driverFilter?` — ${esc(driverFilter)}`:'（全員）';
+  const td=logs.reduce((s,l)=>s+(l.dist||0),0);
+  const tl=fuels.reduce((s,f)=>s+(f.liters||0),0);
+  const avg=tl>0?(td/tl).toFixed(1):'-';
+  const vids=[...new Set([...logs.map(l=>l.vehicle),...fuels.map(f=>f.vehicle)])].filter(Boolean);
+  const barMax=Math.max(...vids.map(vid=>logs.filter(l=>l.vehicle===vid).reduce((s,l)=>s+(l.dist||0),0)),1);
+
+  document.getElementById('report-area').innerHTML=`
+  <div class="card">
+    <div class="card-title">${esc(month)} サマリー${driverLabel}</div>
+    <div class="stats-grid">
+      <div class="stat"><div class="val c-blue">${fmtNum(td)}<span style="font-size:14px">km</span></div><div class="lbl">総走行距離</div></div>
+      <div class="stat"><div class="val c-green">${logs.length}<span style="font-size:14px">回</span></div><div class="lbl">走行回数</div></div>
+      <div class="stat"><div class="val c-orange">${tl.toFixed(1)}<span style="font-size:14px">L</span></div><div class="lbl">総給油量</div></div>
+      <div class="stat"><div class="val">${avg}<span style="font-size:14px">km/L</span></div><div class="lbl">平均燃費</div></div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-title">車両別走行距離</div>
+    ${vids.map(vid=>{
+      const vl=logs.filter(l=>l.vehicle===vid);
+      const dist=vl.reduce((s,l)=>s+(l.dist||0),0);
+      const pct=Math.round(dist/barMax*100);
+      const v=cache.vehicles.find(v=>v.plate===vid);
+      return`<div class="rep-bar-wrap">
+        <div class="rep-bar-label"><span>${esc(vid)}${v&&v.name?' '+esc(v.name):''}</span><span>${fmtNum(dist)} km</span></div>
+        <div class="rep-bar-bg"><div class="rep-bar-fill" style="width:${pct}%"></div></div>
+      </div>`;
+    }).join('')}
+  </div>
+  <div class="card">
+    <div class="card-title">車両別詳細</div>
+    <div class="table-wrap"><table><thead><tr>
+      <th>車両</th><th>距離</th><th>回数</th><th>燃費</th><th>目標</th>
+    </tr></thead><tbody>${vids.map(vid=>{
+      const vl=logs.filter(l=>l.vehicle===vid),vf=fuels.filter(f=>f.vehicle===vid);
+      const dist=vl.reduce((s,l)=>s+(l.dist||0),0);
+      const lit=vf.reduce((s,f)=>s+(f.liters||0),0);
+      const eff=lit>0?(dist/lit).toFixed(1):'-';
+      const v=cache.vehicles.find(v=>v.plate===vid);
+      const tgt=v?.target;
+      const ok=eff!=='-'&&tgt?(parseFloat(eff)>=tgt?'<span class="badge bg">達成</span>':'<span class="badge br">未達</span>'):'-';
+      return`<tr>
+        <td><span class="badge bb">${esc(vid)}</span></td>
+        <td class="mono">${fmtNum(dist)} km</td>
+        <td>${vl.length}回</td>
+        <td class="mono">${eff!=='-'?eff+' km/L':'-'}</td>
+        <td>${ok}</td>
+      </tr>`;
+    }).join('')}</tbody></table></div>
+  </div>`;
+}
+
+function populateYearSelect(){
+  const sel=document.getElementById('rep-year');
+  if(!sel)return;
+  const today=new Date();
+  const curY=today.getFullYear();
+  const years=new Set([curY]);
+  cache.logs.forEach(l=>{if(l.depDate)years.add(parseInt(l.depDate.slice(0,4)));});
+  cache.fuels.forEach(f=>{if(f.date)years.add(parseInt(f.date.slice(0,4)));});
+  const sorted=[...years].sort((a,b)=>b-a);
+  sel.innerHTML=sorted.map(y=>`<option value="${y}">${y}年</option>`).join('');
+}
+
+function generateYearReport(){
+  const year=document.getElementById('rep-year').value;
+  if(!year)return;
+  const driverFilter=document.getElementById('rep-driver-filter')?.value||'';
+  let logs=cache.logs.filter(l=>l.depDate&&l.depDate.startsWith(year)&&!l.deleted);
+  let fuels=cache.fuels.filter(f=>f.date&&f.date.startsWith(year)&&!f.deleted);
+  if(driverFilter){logs=logs.filter(l=>l.driver===driverFilter);fuels=fuels.filter(f=>f.driver===driverFilter);}
+  const driverLabel=driverFilter?` — ${esc(driverFilter)}`:'（全員）';
+
+  const tDist=logs.reduce((s,l)=>s+(l.dist||0),0);
+  const tLit=fuels.reduce((s,f)=>s+(f.liters||0),0);
+  const tPriv=logs.reduce((s,l)=>s+(l.privDist||0),0);
+  const avgEff=tLit>0?(tDist/tLit).toFixed(1):'-';
+
+  const monthData=[];
+  for(let m=1;m<=12;m++){
+    const mStr=year+'-'+pad(m);
+    const mLogs=logs.filter(l=>l.depDate.startsWith(mStr));
+    const mFuels=fuels.filter(f=>f.date.startsWith(mStr));
+    const mDist=mLogs.reduce((s,l)=>s+(l.dist||0),0);
+    const mLit=mFuels.reduce((s,f)=>s+(f.liters||0),0);
+    const mPriv=mLogs.reduce((s,l)=>s+(l.privDist||0),0);
+    monthData.push({month:m,dist:mDist,count:mLogs.length,lit:mLit,eff:mLit>0?(mDist/mLit).toFixed(1):'-',priv:mPriv});
+  }
+  const maxMonthDist=Math.max(...monthData.map(d=>d.dist),1);
+
+  const drivers={};
+  logs.forEach(l=>{
+    const d=l.driver||'(未記入)';
+    if(!drivers[d])drivers[d]={count:0,dist:0,priv:0};
+    drivers[d].count++;drivers[d].dist+=l.dist||0;drivers[d].priv+=l.privDist||0;
+  });
+  const driverList=Object.entries(drivers).sort((a,b)=>b[1].dist-a[1].dist);
+
+  const vehicles={};
+  logs.forEach(l=>{
+    const v=l.vehicle||'(未記入)';
+    if(!vehicles[v])vehicles[v]={count:0,dist:0,lit:0,priv:0};
+    vehicles[v].count++;vehicles[v].dist+=l.dist||0;vehicles[v].priv+=l.privDist||0;
+  });
+  fuels.forEach(f=>{
+    const v=f.vehicle||'(未記入)';
+    if(!vehicles[v])vehicles[v]={count:0,dist:0,lit:0,priv:0};
+    vehicles[v].lit+=f.liters||0;
+  });
+  const vehicleList=Object.entries(vehicles).sort((a,b)=>b[1].dist-a[1].dist);
+
+  document.getElementById('report-area').innerHTML=`
+  <div class="card" id="year-report-content">
+    <div class="card-title" style="font-size:14px;color:var(--accent);font-weight:800">${esc(year)}年 年度レポート${driverLabel}</div>
+    <div class="stats-grid" style="margin-bottom:20px">
+      <div class="stat"><div class="val c-blue">${fmtNum(tDist)}<span style="font-size:14px">km</span></div><div class="lbl">総走行距離(業務)</div></div>
+      <div class="stat"><div class="val c-orange">${fmtNum(tPriv)}<span style="font-size:14px">km</span></div><div class="lbl">私用走行距離</div></div>
+      <div class="stat"><div class="val c-green">${logs.length}<span style="font-size:14px">回</span></div><div class="lbl">走行回数</div></div>
+      <div class="stat"><div class="val">${avgEff}<span style="font-size:14px">km/L</span></div><div class="lbl">平均燃費</div></div>
+    </div>
+    <div class="card-title">月別走行距離</div>
+    <div style="margin-bottom:24px">
+      ${monthData.map(d=>{
+        const pct=Math.round(d.dist/maxMonthDist*100);
+        return`<div class="rep-bar-wrap">
+          <div class="rep-bar-label"><span>${d.month}月</span><span>${fmtNum(d.dist)} km (${d.count}回)</span></div>
+          <div class="rep-bar-bg"><div class="rep-bar-fill" style="width:${pct}%"></div></div>
+        </div>`;
+      }).join('')}
+    </div>
+    <div class="card-title">月別 詳細集計</div>
+    <div class="table-wrap" style="margin-bottom:24px"><table><thead><tr>
+      <th>月</th><th>走行距離</th><th>回数</th><th>給油量</th><th>燃費</th><th>私用</th>
+    </tr></thead><tbody>${monthData.map(d=>`<tr>
+      <td><b>${d.month}月</b></td>
+      <td class="mono">${fmtNum(d.dist)} km</td>
+      <td>${d.count}回</td>
+      <td class="mono">${d.lit.toFixed(1)} L</td>
+      <td class="mono">${d.eff!=='-'?d.eff+' km/L':'-'}</td>
+      <td class="mono" style="color:#92400e">${d.priv?fmtNum(d.priv)+' km':'-'}</td>
+    </tr>`).join('')}
+    <tr style="background:#eff6ff;font-weight:700">
+      <td>合計</td><td class="mono">${fmtNum(tDist)} km</td><td>${logs.length}回</td>
+      <td class="mono">${tLit.toFixed(1)} L</td><td class="mono">${avgEff!=='-'?avgEff+' km/L':'-'}</td>
+      <td class="mono" style="color:#92400e">${fmtNum(tPriv)} km</td>
+    </tr></tbody></table></div>
+    <div class="card-title">車両別 集計</div>
+    <div class="table-wrap" style="margin-bottom:24px"><table><thead><tr>
+      <th>車両</th><th>走行距離</th><th>回数</th><th>給油量</th><th>燃費</th><th>私用</th>
+    </tr></thead><tbody>${vehicleList.map(([v,d])=>{
+      const eff=d.lit>0?(d.dist/d.lit).toFixed(1):'-';
+      return`<tr>
+        <td><span class="badge bb">${esc(v)}</span></td>
+        <td class="mono">${fmtNum(d.dist)} km</td><td>${d.count}回</td>
+        <td class="mono">${d.lit.toFixed(1)} L</td>
+        <td class="mono">${eff!=='-'?eff+' km/L':'-'}</td>
+        <td class="mono" style="color:#92400e">${d.priv?fmtNum(d.priv)+' km':'-'}</td>
+      </tr>`;
+    }).join('')}</tbody></table></div>
+    <div class="card-title">ドライバー別 集計</div>
+    <div class="table-wrap"><table><thead><tr>
+      <th>ドライバー</th><th>走行距離</th><th>回数</th><th>平均/回</th><th>私用</th>
+    </tr></thead><tbody>${driverList.map(([d,data])=>`<tr>
+      <td><b>${esc(d)}</b></td>
+      <td class="mono">${fmtNum(data.dist)} km</td>
+      <td>${data.count}回</td>
+      <td class="mono">${data.count>0?fmtNum(Math.round(data.dist/data.count)):'-'} km</td>
+      <td class="mono" style="color:#92400e">${data.priv?fmtNum(data.priv)+' km':'-'}</td>
+    </tr>`).join('')}</tbody></table></div>
+  </div>`;
+}
+
+function exportReportPDF(){
+  const reportArea=document.getElementById('report-area');
+  if(!reportArea||!reportArea.innerHTML.trim()){showToast('先にレポートを生成してください','error');return;}
+  const win=window.open('','_blank');
+  if(!win){showToast('ポップアップを許可してください','error');return;}
+  const css=document.querySelector('style').innerHTML;
+  const title=document.querySelector('#report-area .card-title')?.textContent||'走行管理レポート';
+  win.document.write(`<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8">
+    <title>${title}</title>
+    <style>${css}
+    body{background:#fff;padding:20px;font-family:'Hiragino Sans','Noto Sans JP',sans-serif;}
+    .card{box-shadow:none;border:1px solid #e2e5ea;break-inside:avoid;}
+    @media print{body{padding:0;}.card{margin-bottom:14px;}@page{margin:15mm;size:A4;}}
+    .print-header{text-align:center;margin-bottom:20px;border-bottom:3px solid #2563c8;padding-bottom:10px;}
+    .print-header h1{color:#2563c8;font-size:22px;}
+    .print-header p{color:#6b7280;font-size:12px;margin-top:4px;}
+    </style></head><body>
+    <div class="print-header"><h1>🚗 走行管理レポート</h1><p>サン電設工業株式会社 — 出力日: ${todayStr()}</p></div>
+    ${reportArea.innerHTML}
+    <script>setTimeout(()=>window.print(),500);<\/script>
+    </body></html>`);
+  win.document.close();
+}
+
+// ===================================================
+// CSV EXPORT（自分のみ）
+// ===================================================
+function exportCSV(type){
+  const today=new Date();
+  const defaultMonth=today.getFullYear()+'-'+pad(today.getMonth()+1);
+  const month=prompt('出力する月を入力してください (YYYY-MM形式)\n例: '+defaultMonth+'\n\n全期間を出力する場合は「all」と入力',defaultMonth);
+  if(!month)return;
+  const myName=getMyDriverName();
+
+  let rows,fn,filtered;
+  if(type==='log'){
+    rows=[['ID','出発日','到着日','車両','ドライバー','行先','出発km','到着km','走行距離km','出発時刻','到着時刻','乗前時刻','乗前検知器','乗前測定','乗前酒気帯び','乗前確認者','乗後時刻','乗後検知器','乗後測定','乗後酒気帯び','乗後確認者']];
+    filtered=cache.logs.filter(l=>!l.deleted&&isMine(l));
+    if(month!=='all')filtered=filtered.filter(l=>(l.depDate||'').startsWith(month));
+    filtered.sort((a,b)=>(a.depDate||'').localeCompare(b.depDate||''));
+    if(filtered.length===0){showToast(month==='all'?'記録がありません':month+' の記録がありません','error');return;}
+    filtered.forEach(l=>{
+      const dist=l.dist!=null?l.dist:(l.depOdo!=null&&l.arrOdo!=null?(l.arrOdo-l.depOdo):0);
+      rows.push([l.id,l.depDate||'',l.arrDate||'',l.vehicle||'',l.driver||'',l.dest||'',
+        l.depOdo!=null?l.depOdo:'',l.arrOdo!=null?l.arrOdo:'',dist,
+        l.depTime||'',l.arrTime||'',
+        l.alcBt||'',l.alcBd||'',l.alcBr!=null?l.alcBr:'',l.alcBk||'',l.alcBc||'',
+        l.alcAt||'',l.alcAd||'',l.alcAr!=null?l.alcAr:'',l.alcAk||'',l.alcAc||'']);
+    });
+    fn=`走行記録_${month==='all'?'全期間':month}.csv`;
+  }else{
+    rows=[['ID','日付','車両','給油量L','走行距離km','燃費km/L']];
+    filtered=cache.fuels.filter(f=>!f.deleted&&isMine(f));
+    if(month!=='all')filtered=filtered.filter(f=>(f.date||'').startsWith(month));
+    filtered.sort((a,b)=>(a.date||'').localeCompare(b.date||''));
+    if(filtered.length===0){showToast(month==='all'?'記録がありません':month+' の記録がありません','error');return;}
+    filtered.forEach(f=>{
+      rows.push([f.id,f.date||'',f.vehicle||'',f.liters!=null?f.liters:0,f.odo!=null?f.odo:'',calcFuelEff(f.vehicle,f.odo)||'']);
+    });
+    fn=`給油記録_${month==='all'?'全期間':month}.csv`;
+  }
+  const bom='\uFEFF',csv=bom+rows.map(r=>r.map(c=>{
+    let s=String(c);
+    if(/^[=+\-@\t\r]/.test(s))s="'"+s;
+    return '"'+s.replace(/"/g,'""')+'"';
+  }).join(',')).join('\n');
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));
+  a.download=fn;a.click();
+  showToast(`${filtered.length}件出力しました ✓`,'success');
+}
+
+// ===================================================
+// TABS & MODALS
+// ===================================================
+function switchTab(name){
+  document.querySelectorAll('.tab-page').forEach(el=>el.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(el=>el.classList.remove('active'));
+  document.getElementById('tab-'+name).classList.add('active');
+  const tabs=['home','logs','fuel-tab','bulk','report','vehicles'];
+  tabs.forEach((t,i)=>{if(t===name)document.querySelectorAll('.tab')[i].classList.add('active');});
+  if(name==='bulk')renderBulkTable();
+}
+function openModal(name){
+  document.getElementById('modal-'+name).classList.add('open');
+  if(name==='dep'){
+    const now=new Date();
+    document.getElementById('dep-alc-bt').value=pad(now.getHours())+':'+pad(now.getMinutes());
+    populateVehicleSelects();
+    const lastVehicle=getSaved('lastVehicle');
+    if(lastVehicle){
+      const sel=document.getElementById('dep-vehicle');
+      if(sel&&[...sel.options].some(o=>o.value===lastVehicle)){sel.value=lastVehicle;onDepVehicleChange();}
+    }
+    // ドライバー欄を自動入力
+    const driverInput=document.getElementById('dep-driver');
+    if(driverInput&&!driverInput.value)driverInput.value=getMyDriverName();
+  }
+  if(name==='arr'){
+    populateVehicleSelects();
+    const now=new Date();
+    document.getElementById('arr-alc-at').value=pad(now.getHours())+':'+pad(now.getMinutes());
+  }
+  if(name==='fuel'){
+    document.getElementById('fuel-date').value=todayStr();
+    populateVehicleSelects();
+  }
+}
+function closeModal(name){document.getElementById('modal-'+name).classList.remove('open');}
+function openArrival(){
+  const unreturned=cache.logs.filter(l=>!l.arrDate&&!l.deleted&&l.depDate);
+  if(unreturned.length===0){showToast('未到着の記録がありません','error');return;}
+  openModal('arr');
+  if(unreturned.length===1){
+    document.getElementById('arr-select').value=unreturned[0].id;
+    onArrSelect();
+  }
+}
+document.querySelectorAll('.modal-overlay').forEach(el=>{
+  el.addEventListener('click',e=>{if(e.target===el)el.classList.remove('open');});
+});
+
+// ===================================================
+// ALCOHOL TOGGLES
+// ===================================================
+function attachAlcoholToggles(){
+  const pairs=[
+    ['alc-dep-header','alc-dep-body'],
+    ['alc-arr-header','alc-arr-body'],
+    ['priv-dep-header','priv-dep-body'],
+    ['edit-priv-header','edit-priv-body']
+  ];
+  pairs.forEach(([hid,bid])=>{
+    const h=document.getElementById(hid),b=document.getElementById(bid);
+    if(!h||!b||h._toggleAttached)return;
+    h.addEventListener('click',()=>{
+      const open=b.classList.contains('open');
+      b.classList.toggle('open',!open);
+      h.querySelector('.alc-arrow').style.transform=open?'rotate(0deg)':'rotate(180deg)';
+    });
+    h._toggleAttached=true;
+  });
+}
+
+// ===================================================
+// OCR
+// ===================================================
+let currentZoom=1,maxZoom=5,minZoom=1,hwZoomSupported=false,hwZoomStep=0.1;
+
+function openOCR(targetId){
+  ocrTargetId=targetId;ocrValue=null;currentZoom=1;
+  ensureTesseract(); // 裏でOCRライブラリを先読みしておく（撮影時の待ちを短縮）
+  document.getElementById('ocr-step1').style.display='block';
+  document.getElementById('ocr-step2').style.display='none';
+  document.getElementById('modal-ocr').classList.add('open');
+  document.getElementById('ocr-camera-area').style.display='block';
+  document.getElementById('ocr-shutter').style.display='block';
+  updateZoomDisplay();
+  navigator.mediaDevices.getUserMedia({video:{facingMode:'environment',width:{ideal:1920},height:{ideal:1080}}})
+    .then(stream=>{
+      ocrStream=stream;
+      document.getElementById('ocr-video').srcObject=stream;
+      const track=stream.getVideoTracks()[0];
+      const caps=track.getCapabilities?track.getCapabilities():{};
+      if(caps.zoom){hwZoomSupported=true;minZoom=caps.zoom.min||1;maxZoom=caps.zoom.max||3;hwZoomStep=caps.zoom.step||0.1;currentZoom=caps.zoom.min||1;}
+      else{hwZoomSupported=false;minZoom=1;maxZoom=5;}
+      setupPinchZoom();updateZoomDisplay();
+    })
+    .catch(err=>{
+      document.getElementById('ocr-camera-area').style.display='none';
+      document.getElementById('ocr-shutter').style.display='none';
+    });
+}
+function zoomCamera(delta){setZoom(currentZoom+delta);}
+function setZoom(z){
+  currentZoom=Math.max(minZoom,Math.min(maxZoom,z));
+  if(hwZoomSupported&&ocrStream){
+    const track=ocrStream.getVideoTracks()[0];
+    track.applyConstraints({advanced:[{zoom:currentZoom}]}).catch(()=>{hwZoomSupported=false;applyCssZoom();});
+  }else{applyCssZoom();}
+  updateZoomDisplay();
+}
+function applyCssZoom(){const v=document.getElementById('ocr-video');v.style.transform=`scale(${currentZoom})`;}
+function updateZoomDisplay(){const el=document.getElementById('zoom-display');if(el)el.textContent=currentZoom.toFixed(1)+'x';}
+function setupPinchZoom(){
+  const area=document.getElementById('ocr-camera-area');
+  if(!area||area._pinchAttached)return;
+  let startDist=0,startZoom=1;
+  area.addEventListener('touchstart',e=>{if(e.touches.length===2){e.preventDefault();const dx=e.touches[0].clientX-e.touches[1].clientX,dy=e.touches[0].clientY-e.touches[1].clientY;startDist=Math.sqrt(dx*dx+dy*dy);startZoom=currentZoom;}},{passive:false});
+  area.addEventListener('touchmove',e=>{if(e.touches.length===2&&startDist>0){e.preventDefault();const dx=e.touches[0].clientX-e.touches[1].clientX,dy=e.touches[0].clientY-e.touches[1].clientY;setZoom(startZoom*Math.sqrt(dx*dx+dy*dy)/startDist);}},{passive:false});
+  area.addEventListener('touchend',e=>{if(e.touches.length<2)startDist=0;});
+  area._pinchAttached=true;
+}
+function closeOCR(){if(ocrStream){ocrStream.getTracks().forEach(t=>t.stop());ocrStream=null;}document.getElementById('modal-ocr').classList.remove('open');}
+function captureOCR(){
+  const v=document.getElementById('ocr-video'),c=document.getElementById('ocr-canvas');
+  const w=v.videoWidth||640,h=v.videoHeight||480;
+  c.width=w;c.height=h;
+  const ctx=c.getContext('2d');
+  if(hwZoomSupported||currentZoom===1){ctx.drawImage(v,0,0,w,h);}
+  else{const cw=w/currentZoom,ch=h/currentZoom,cx=(w-cw)/2,cy=(h-ch)/2;ctx.drawImage(v,cx,cy,cw,ch,0,0,w,h);}
+  processOCR(c.toDataURL('image/jpeg',.92));
+}
+function handleOCRFile(e){const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=ev=>processOCR(ev.target.result);r.readAsDataURL(f);}
+function processOCR(dataUrl){
+  if(ocrStream){ocrStream.getTracks().forEach(t=>t.stop());ocrStream=null;}
+  document.getElementById('ocr-step1').style.display='none';
+  document.getElementById('ocr-step2').style.display='block';
+  document.getElementById('ocr-preview').src=dataUrl;
+  document.getElementById('ocr-output').innerHTML='<div class="ocr-loading"><span class="ocr-spin">⚙️</span>AIが読み取り中...</div>';
+  document.getElementById('ocr-use-btn').style.display='none';
+  runOCR(dataUrl);
+}
+function retakeOCR(){
+  document.getElementById('ocr-step2').style.display='none';
+  document.getElementById('ocr-step1').style.display='block';
+  document.getElementById('ocr-camera-area').style.display='block';
+  document.getElementById('ocr-shutter').style.display='block';
+  currentZoom=1;document.getElementById('ocr-video').style.transform='';
+  navigator.mediaDevices.getUserMedia({video:{facingMode:'environment',width:{ideal:1920},height:{ideal:1080}}})
+    .then(stream=>{ocrStream=stream;document.getElementById('ocr-video').srcObject=stream;updateZoomDisplay();})
+    .catch(()=>{});
+}
+// OCRライブラリ(Tesseract)を撮影時だけ遅延読み込み（起動を軽くするため）
+let _tessLoading=null;
+function ensureTesseract(){
+  if(typeof Tesseract!=='undefined')return Promise.resolve(true);
+  if(_tessLoading)return _tessLoading;
+  _tessLoading=new Promise(resolve=>{
+    const s=document.createElement('script');
+    s.src='https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js';
+    s.crossOrigin='anonymous';s.referrerPolicy='no-referrer';
+    s.onload=()=>resolve(true);
+    s.onerror=()=>{_tessLoading=null;resolve(false);};
+    document.head.appendChild(s);
+  });
+  return _tessLoading;
+}
+
+async function runOCR(dataUrl){
+  const out=document.getElementById('ocr-output');
+  out.innerHTML='<div class="ocr-loading"><span class="ocr-spin">⚙️</span>OCR処理中...<br><small style="color:var(--text3)">初回は読込に20秒ほどかかります</small><br><progress id="ocr-prog" max="100" value="0" style="width:80%;margin-top:10px"></progress></div>';
+  document.getElementById('ocr-use-btn').style.display='none';
+  try{
+    const ready=await ensureTesseract();
+    if(!ready||typeof Tesseract==='undefined'){
+      out.innerHTML='<div style="background:var(--red-light);border:1.5px solid var(--red);border-radius:var(--radius-sm);padding:14px;color:var(--red);font-size:13px">⚠️ OCRライブラリの読込に失敗しました。手動で入力してください。</div>'+manualInputHTML();
+      document.getElementById('ocr-use-btn').style.display='block';return;
+    }
+    const result=await Tesseract.recognize(dataUrl,'eng',{
+      logger:m=>{if(m.status==='recognizing text'){const p=document.getElementById('ocr-prog');if(p)p.value=Math.round((m.progress||0)*100);}},
+      tessedit_char_whitelist:'0123456789 .,kmKM'
+    });
+    const text=result.data.text||'';
+    const nums=(text.match(/\d{3,7}/g)||[]).map(n=>parseInt(n,10)).filter(n=>n>=100&&n<9999999);
+    const unique=[...new Set(nums)].sort((a,b)=>b-a).slice(0,5);
+    if(unique.length===0){
+      out.innerHTML=`<div style="background:#fffbeb;border:1.5px solid #f59e0b;border-radius:var(--radius-sm);padding:14px;color:#92400e;font-size:13px;margin-bottom:12px">⚠️ 自動読み取りできませんでした。手動で入力してください。</div>`+manualInputHTML();
+      document.getElementById('ocr-use-btn').style.display='block';return;
+    }
+    let html='<div style="font-size:13px;font-weight:700;margin-bottom:10px">候補から選んでください</div>';
+    unique.forEach((n,i)=>{
+      const isLikely=i===0;
+      html+=`<button class="submit-btn" style="margin-bottom:8px;background:${isLikely?'var(--accent)':'var(--bg)'};color:${isLikely?'#fff':'var(--text)'};border:1.5px solid var(--accent);font-family:'SF Mono',monospace;font-size:18px" onclick="selectOCRValue(${n})">${isLikely?'★ ':''}${n.toLocaleString('ja-JP')} km</button>`;
+    });
+    html+=manualInputHTML();
+    out.innerHTML=html;
+    document.getElementById('ocr-use-btn').style.display='block';
+    document.getElementById('ocr-use-btn').textContent='✓ 入力した値を使用';
+  }catch(e){
+    out.innerHTML=`<div style="background:var(--red-light);border:1.5px solid var(--red);border-radius:var(--radius-sm);padding:14px;color:var(--red);font-size:13px;margin-bottom:12px">⚠️ OCRエラー: ${e.message||e}</div>`+manualInputHTML();
+    document.getElementById('ocr-use-btn').style.display='block';
+    document.getElementById('ocr-use-btn').textContent='✓ 入力した値を使用';
+  }
+}
+function manualInputHTML(){
+  return '<div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border)"><label style="display:block;font-size:12px;color:var(--text2);margin-bottom:6px;font-weight:600">または手動で入力：</label><input type="number" id="ocr-manual" placeholder="例: 124529" inputmode="numeric" style="width:100%;padding:13px;border:1.5px solid var(--border);border-radius:8px;font-size:18px;font-family:monospace"></div>';
+}
+function selectOCRValue(n){if(ocrTargetId)document.getElementById(ocrTargetId).value=n;closeOCR();}
+function useOCRValue(){
+  const manual=document.getElementById('ocr-manual');
+  if(manual&&manual.value&&ocrTargetId){document.getElementById(ocrTargetId).value=parseInt(manual.value,10);closeOCR();return;}
+  if(ocrValue!=null&&ocrTargetId)document.getElementById(ocrTargetId).value=ocrValue;
+  closeOCR();
+}
+
+// ===================================================
+// まとめ入力
+// ===================================================
+let bulkYear=0,bulkMonth=0;
+
+function bulkInit(){
+  const now=new Date();
+  bulkYear=now.getFullYear();
+  bulkMonth=now.getMonth()+1;
+}
+function bulkPrevMonth(){bulkMonth--;if(bulkMonth<1){bulkMonth=12;bulkYear--;}renderBulkTable();}
+function bulkNextMonth(){bulkMonth++;if(bulkMonth>12){bulkMonth=1;bulkYear++;}renderBulkTable();}
+function bulkDraftKey(){return`bulkDraft_${getMyOwner()||getMyDriverName()}_${bulkYear}_${pad(bulkMonth)}`;}
+
+// 行先 → 代表距離マップを構築。
+// 自分の過去記録から、行先ごとに最も多く使われた距離(最頻値)を採用。
+// 同数なら最新の記録の距離を優先。これにより「現場名を入れたら距離が自動」を実現。
+function buildDestDistMap(){
+  const map={};
+  const byDest={};
+  cache.logs
+    .filter(l=>isMine(l)&&!l.deleted&&l.dest&&l.dist!=null&&l.dist>0)
+    .sort((a,b)=>(a.depDate||'').localeCompare(b.depDate||''))
+    .forEach(l=>{
+      if(!byDest[l.dest])byDest[l.dest]={};
+      const dist=Math.round(l.dist);
+      if(!byDest[l.dest][dist])byDest[l.dest][dist]={count:0};
+      byDest[l.dest][dist].count++;
+    });
+  for(const dest of Object.keys(byDest)){
+    const dists=byDest[dest];
+    let best=null,bestCount=-1;
+    for(const dStr of Object.keys(dists)){
+      const c=dists[dStr].count;
+      if(c>bestCount){bestCount=c;best=Number(dStr);}
+    }
+    if(best!=null)map[dest]=best;
+  }
+  return map;
+}
+
+function renderBulkTable(){
+  if(!bulkYear)bulkInit();
+  document.getElementById('bulk-month-label').textContent=`${bulkYear}年${bulkMonth}月`;
+
+  const daysInMonth=new Date(bulkYear,bulkMonth,0).getDate();
+  const DOW=['日','月','火','水','木','金','土'];
+  const mStr=`${bulkYear}-${pad(bulkMonth)}`;
+
+  // SharePoint既存データ（自分のもの）
+  const existingLogs=cache.logs.filter(l=>isMine(l)&&l.depDate&&l.depDate.startsWith(mStr)&&!l.deleted);
+
+  // 下書きデータ
+  const draft=getSaved(bulkDraftKey())||{};
+
+  // 前月末の到着kmを取得
+  const prevLogs=cache.logs.filter(l=>isMine(l)&&l.arrOdo&&l.arrDate&&l.arrDate<mStr+'-01'&&!l.deleted)
+    .sort((a,b)=>(b.arrDate||'').localeCompare(a.arrDate||''));
+  let globalPrevArrOdo=prevLogs.length>0?prevLogs[0].arrOdo:null;
+
+  // 既存ログから前回値を初期化
+  const sortedExisting=[...existingLogs].sort((a,b)=>(a.depDate||'').localeCompare(b.depDate||''));
+  let globalPrevDest='';
+  let globalPrevDist=null;
+  if(sortedExisting.length>0){
+    const last=sortedExisting[sortedExisting.length-1];
+    globalPrevDest=last.dest||'';
+    globalPrevDist=last.dist||null;
+    if(last.arrOdo)globalPrevArrOdo=last.arrOdo;
+  }
+
+  // 行先 → 距離マップ（過去の自分の全記録から行先ごとの代表距離を算出）
+  const destDistMap=buildDestDistMap();
+
+  const today=todayStr();
+  let html=`<table style="width:100%;border-collapse:collapse;font-size:13px;min-width:400px">
+  <thead><tr style="background:#f8f9fb;">
+    <th style="padding:7px 6px;text-align:center;font-size:10px;color:var(--text2);border-bottom:1px solid var(--border);width:44px">日</th>
+    <th style="padding:7px 6px;font-size:10px;color:var(--text2);border-bottom:1px solid var(--border)">行先</th>
+    <th style="padding:7px 6px;font-size:10px;color:var(--text2);border-bottom:1px solid var(--border);width:74px">出発km</th>
+    <th style="padding:7px 6px;font-size:10px;color:var(--text2);border-bottom:1px solid var(--border);width:74px">到着km</th>
+    <th style="padding:7px 6px;font-size:10px;color:var(--text2);border-bottom:1px solid var(--border);width:54px">距離</th>
+  </tr></thead><tbody>`;
+
+  // BUG FIX: 行ごとに前日の値を引き継ぐため、まず全日のデータを計算してから描画
+  let runPrevArrOdo=globalPrevArrOdo;
+  let runPrevDest=globalPrevDest;
+  let runPrevDist=globalPrevDist;
+
+  for(let d=1;d<=daysInMonth;d++){
+    const dateStr=`${bulkYear}-${pad(bulkMonth)}-${pad(d)}`;
+    const dow=new Date(bulkYear,bulkMonth-1,d).getDay();
+    const isToday=dateStr===today;
+    const isSun=dow===0,isSat=dow===6;
+
+    const existing=existingLogs.find(l=>l.depDate===dateStr);
+    const dr=draft[dateStr]||{};
+
+    // 値の優先順位: 下書き > 既存SP > 前行引き継ぎ
+    const dest=dr.dest!=null?dr.dest:(existing?existing.dest||'':'');
+    // BUG FIX: 出発kmは「下書き > 既存SP > 前行到着km」の順で決定
+    const depOdoVal=dr.depOdo!=null?dr.depOdo:(existing&&existing.depOdo!=null?existing.depOdo:(runPrevArrOdo!=null?runPrevArrOdo:''));
+    const arrOdoVal=dr.arrOdo!=null?dr.arrOdo:(existing&&existing.arrOdo!=null?existing.arrOdo:'');
+
+    // 距離計算
+    let distVal='';
+    let distFromDest=false;
+    const dOdo=depOdoVal!==''?parseFloat(depOdoVal):NaN;
+    const aOdo=arrOdoVal!==''?parseFloat(arrOdoVal):NaN;
+    const isWeekend=isSun||isSat;
+    if(dr.distManual&&dr.dist!=null){
+      // 手動編集された距離を優先
+      distVal=dr.dist;
+    } else if(!isNaN(dOdo)&&!isNaN(aOdo)&&aOdo>dOdo){
+      // 出発・到着km両方あれば実測値を優先
+      distVal=Math.round(aOdo-dOdo);
+    } else if(!isWeekend&&dest){
+      // 平日かつ行先あり: 行先マップから過去実績の距離を自動入力（土日は提案しない）
+      if(destDistMap[dest]!=null){
+        distVal=destDistMap[dest];
+        distFromDest=true;
+      } else if(dest===runPrevDest&&runPrevDist!=null){
+        distVal=runPrevDist;
+        distFromDest=true;
+      }
+    }
+
+    const isDone=depOdoVal!==''&&arrOdoVal!==''&&distVal!=='';
+    let rowBg=isWeekend?'background:#fafafa;':'';
+    if(isToday)rowBg='background:#fffbeb;';
+    const borderLeft=isDone?'border-left:3px solid var(--green);':'border-left:3px solid transparent;';
+
+    const dateColor=isSun?'color:#dc2626;':isSat?'color:#2563c8;':isToday?'color:var(--orange);font-weight:700;':'';
+    const distStyle=distVal!==''?'background:var(--green-light);border-color:#86efac;color:var(--green);font-weight:500;':'';
+    // 土日は前回行先のプレースホルダーや一致ハイライトを出さない
+    const destStyle=(!isWeekend&&dest&&(distFromDest||dest===runPrevDest))?'background:#eff6ff;border-color:#93c5fd;':'';
+    const destPlaceholder=isWeekend?'(休日)':esc(runPrevDest||'行先');
+
+    html+=`<tr style="${rowBg}${borderLeft}border-bottom:1px solid var(--border);" data-date="${dateStr}">
+      <td style="padding:3px 4px;text-align:center;">
+        <div style="font-size:15px;font-weight:500;line-height:1;${dateColor}">${d}</div>
+        <div style="font-size:9px;${isSun?'color:#dc2626;':isSat?'color:#2563c8;':'color:var(--text3);'}">${DOW[dow]}</div>
+      </td>
+      <td style="padding:3px 4px;">
+        <input type="text" class="bulk-dest" data-date="${dateStr}"
+          value="${esc(String(dest))}"
+          placeholder="${destPlaceholder}"
+          style="width:100%;padding:5px 5px;border:1px solid var(--border);border-radius:5px;font-size:12px;background:var(--bg);${destStyle}"
+          oninput="saveBulkRowToDraft('${dateStr}')" onchange="onBulkInput('${dateStr}')" list="dest-history">
+      </td>
+      <td style="padding:3px 4px;">
+        <input type="number" class="bulk-dep" data-date="${dateStr}"
+          value="${depOdoVal!==''?depOdoVal:''}"
+          placeholder="km"
+          style="width:100%;padding:5px 5px;border:1px solid var(--border);border-radius:5px;font-size:12px;background:var(--bg);"
+          oninput="onBulkInput('${dateStr}')">
+      </td>
+      <td style="padding:3px 4px;">
+        <input type="number" class="bulk-arr" data-date="${dateStr}"
+          value="${arrOdoVal!==''?arrOdoVal:''}"
+          placeholder="km"
+          style="width:100%;padding:5px 5px;border:1px solid var(--border);border-radius:5px;font-size:12px;background:var(--bg);"
+          oninput="onBulkInput('${dateStr}')">
+      </td>
+      <td style="padding:3px 4px;">
+        <input type="number" class="bulk-dist" data-date="${dateStr}"
+          value="${distVal!==''?distVal:''}"
+          placeholder="自動"
+          style="width:100%;padding:5px 5px;border:1px solid var(--border);border-radius:5px;font-size:12px;${distStyle}"
+          oninput="onBulkDistInput('${dateStr}')">
+      </td>
+    </tr>`;
+
+    // 次行のための引き継ぎ値を更新
+    if(isDone){
+      if(dest)runPrevDest=dest;
+      runPrevDist=distVal!==''?parseFloat(distVal):runPrevDist;
+      runPrevArrOdo=parseFloat(arrOdoVal);
+    } else if(arrOdoVal!==''){
+      runPrevArrOdo=parseFloat(arrOdoVal);
+    }
+  }
+  html+='</tbody></table>';
+  document.getElementById('bulk-table-wrap').innerHTML=html;
+  updateBulkSummary();
+}
+
+// 入力のたびに「その行の入力値を下書きへ保存 → 全再描画 → フォーカス復帰」。
+// これにより出発km引き継ぎ・距離提案・連鎖がすべて一貫して計算される。
+function onBulkInput(dateStr){
+  saveBulkRowToDraft(dateStr);
+  // フォーカス中の要素を記憶
+  const active=document.activeElement;
+  const activeClass=active?.className||'';
+  const activeDate=active?.getAttribute?.('data-date')||'';
+  const caret=active&&active.selectionStart!=null?active.selectionStart:null;
+
+  renderBulkTable();
+
+  // フォーカス復帰
+  if(activeClass&&activeDate){
+    const sel=`.${activeClass.split(' ').find(c=>c.startsWith('bulk-'))}[data-date="${activeDate}"]`;
+    const el=document.querySelector(sel);
+    if(el){
+      el.focus();
+      if(caret!=null&&el.setSelectionRange){try{el.setSelectionRange(caret,caret);}catch{}}
+    }
+  }
+}
+
+function onBulkDistInput(dateStr){
+  // 距離を手動編集した場合は、その値を下書きに保存（自動上書きしない）
+  const distEl=document.querySelector(`.bulk-dist[data-date="${dateStr}"]`);
+  const draft=getSaved(bulkDraftKey())||{};
+  if(!draft[dateStr])draft[dateStr]={};
+  draft[dateStr].dist=distEl&&distEl.value!==''?parseFloat(distEl.value):null;
+  draft[dateStr].distManual=true; // 手動編集フラグ
+  setSaved(bulkDraftKey(),draft);
+  updateBulkSummary();
+}
+
+// 1行分の現在の入力値を下書きへ保存（再描画前に呼ぶ）
+function saveBulkRowToDraft(dateStr){
+  const destEl=document.querySelector(`.bulk-dest[data-date="${dateStr}"]`);
+  const depEl=document.querySelector(`.bulk-dep[data-date="${dateStr}"]`);
+  const arrEl=document.querySelector(`.bulk-arr[data-date="${dateStr}"]`);
+  const distEl=document.querySelector(`.bulk-dist[data-date="${dateStr}"]`);
+  if(!depEl||!arrEl)return;
+  const draft=getSaved(bulkDraftKey())||{};
+  const prev=draft[dateStr]||{};
+  draft[dateStr]={
+    dest:destEl?destEl.value:'',
+    depOdo:depEl.value!==''?parseFloat(depEl.value):null,
+    arrOdo:arrEl.value!==''?parseFloat(arrEl.value):null,
+    // 手動編集された距離は保持、それ以外はnull（再描画時に自動計算させる）
+    dist:prev.distManual&&distEl&&distEl.value!==''?parseFloat(distEl.value):null,
+    distManual:prev.distManual||false
+  };
+  setSaved(bulkDraftKey(),draft);
+}
+
+function updateBulkSummary(){
+  let done=0,pending=0,totalKm=0;
+  document.querySelectorAll('tr[data-date]').forEach(row=>{
+    const dest=row.querySelector('.bulk-dest')?.value;
+    const dep=row.querySelector('.bulk-dep')?.value;
+    const arr=row.querySelector('.bulk-arr')?.value;
+    const dist=row.querySelector('.bulk-dist')?.value;
+    const hasOdo=(dep&&arr);
+    const hasDestDist=(dest&&dist);
+    if((hasOdo&&dist)||hasDestDist){done++;totalKm+=parseFloat(dist)||0;}
+    else if(dep||arr||dest){pending++;}
+  });
+  document.getElementById('bulk-summary').innerHTML=`
+    <div style="text-align:center;padding:8px;background:var(--white);border-radius:var(--radius-sm);border:1px solid var(--border)">
+      <div style="font-size:18px;font-weight:500;color:var(--green)">${done}</div>
+      <div style="font-size:10px;color:var(--text2);margin-top:1px">入力済み</div>
+    </div>
+    <div style="text-align:center;padding:8px;background:var(--white);border-radius:var(--radius-sm);border:1px solid var(--border)">
+      <div style="font-size:18px;font-weight:500;color:var(--orange)">${pending}</div>
+      <div style="font-size:10px;color:var(--text2);margin-top:1px">未完了</div>
+    </div>
+    <div style="text-align:center;padding:8px;background:var(--white);border-radius:var(--radius-sm);border:1px solid var(--border)">
+      <div style="font-size:18px;font-weight:500;color:var(--accent)">${fmtNum(totalKm)}</div>
+      <div style="font-size:10px;color:var(--text2);margin-top:1px">合計km</div>
+    </div>`;
+  const btn=document.getElementById('bulk-submit-btn');
+  if(btn)btn.textContent=`☁ 走行記録を更新（${done}件）`;
+}
+
+function bulkSaveDraft(){
+  const draft=getSaved(bulkDraftKey())||{};
+  document.querySelectorAll('tr[data-date]').forEach(row=>{
+    const dateStr=row.getAttribute('data-date');
+    if(!dateStr)return;
+    const dest=row.querySelector('.bulk-dest')?.value||'';
+    const dep=row.querySelector('.bulk-dep')?.value;
+    const arr=row.querySelector('.bulk-arr')?.value;
+    const dist=row.querySelector('.bulk-dist')?.value;
+    if(dest||dep||arr){
+      draft[dateStr]={
+        dest,
+        depOdo:dep!==''&&dep!=null?parseFloat(dep):null,
+        arrOdo:arr!==''&&arr!=null?parseFloat(arr):null,
+        dist:dist!==''&&dist!=null?parseFloat(dist):null
+      };
+    }
+  });
+  setSaved(bulkDraftKey(),draft);
+  showToast('下書きを保存しました 💾','success');
+}
+
+async function bulkSubmit(){
+  const myName=getMyDriverName();
+  const myOwner=getMyOwner();
+  const toRegister=[];
+
+  document.querySelectorAll('tr[data-date]').forEach(row=>{
+    const dateStr=row.getAttribute('data-date');
+    if(!dateStr)return;
+    const dest=row.querySelector('.bulk-dest')?.value||'';
+    const depVal=row.querySelector('.bulk-dep')?.value;
+    const arrVal=row.querySelector('.bulk-arr')?.value;
+    const distVal=row.querySelector('.bulk-dist')?.value;
+    const depOdo=depVal!=null&&depVal!==''?parseFloat(depVal):null;
+    const arrOdo=arrVal!=null&&arrVal!==''?parseFloat(arrVal):null;
+    const dist=distVal!=null&&distVal!==''?parseFloat(distVal):null;
+    // 登録対象: 出発/到着kmがある、または「行先+距離」がある行
+    const hasOdo=depOdo!=null||arrOdo!=null;
+    const hasDestDist=dest!==''&&dist!=null&&dist>0;
+    if(!hasOdo&&!hasDestDist)return;
+    toRegister.push({dateStr,dest,depOdo,arrOdo,dist});
+  });
+
+  if(toRegister.length===0){showToast('登録する行がありません（行先と距離、または出発km・到着kmを入力してください）','error');return;}
+
+  const btn=document.getElementById('bulk-submit-btn');
+  btn.disabled=true;
+  showLoading('SharePointに登録中...');
+  let success=0,fail=0;
+
+  try{
+    for(const item of toRegister){
+      // 同日・自分のレコードを探す（owner優先、なければdriver名）
+      const existing=cache.logs.find(l=>l.depDate===item.dateStr&&isMine(l)&&!l.deleted);
+      if(existing){
+        const patch={dest:item.dest,depOdo:item.depOdo,arrOdo:item.arrOdo,dist:item.dist};
+        if(item.arrOdo!=null)patch.arrDate=item.dateStr;
+        // owner未設定の既存データには所有者を補完
+        if(!existing.owner&&myOwner)patch.owner=myOwner;
+        try{await spUpdate('log',existing.id,patch);Object.assign(existing,patch);success++;}
+        catch(e){console.error('bulk update error:',e);fail++;}
+      }else{
+        const entry={
+          id:uid(),driver:myName,owner:myOwner,vehicle:'',
+          depDate:item.dateStr,
+          dest:item.dest,depOdo:item.depOdo,arrOdo:item.arrOdo,dist:item.dist,
+          depTime:'',arrTime:''
+        };
+        if(item.arrOdo!=null)entry.arrDate=item.dateStr;
+        try{await appendItem('log',entry);cache.logs.push(entry);success++;}
+        catch(e){console.error('bulk add error:',e);fail++;}
+      }
+    }
+    try{localStorage.removeItem(bulkDraftKey());}catch{}
+    render();
+    renderBulkTable();
+    showToast(`${success}件を登録しました${fail>0?' ('+fail+'件失敗)':''}  ✓`,'success');
+  }catch(e){
+    showToast('登録中にエラーが発生しました: '+e.message,'error');
+  }finally{btn.disabled=false;hideLoading();}
+}
+
+// ===================================================
+// UTILS
+// ===================================================
+function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2);}
+function esc(v){
+  if(v==null)return '';
+  return String(v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+function todayStr(){const d=new Date();return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());}
+function pad(n){return String(n).padStart(2,'0');}
+function fmtNum(n){return n!=null&&n!==''?Number(n).toLocaleString('ja-JP'):'-';}
+function sleep(ms){return new Promise(r=>setTimeout(r,ms));}
+
+function showToast(msg,type=''){
+  let t=document.getElementById('notif-toast');
+  if(!t){
+    t=document.createElement('div');t.id='notif-toast';
+    t.style.cssText='position:fixed;top:20px;left:50%;transform:translateX(-50%) translateY(-80px);background:#1f2937;color:#fff;padding:11px 18px;border-radius:10px;font-size:13px;z-index:2100;transition:transform .3s;box-shadow:0 4px 12px rgba(0,0,0,.2);white-space:nowrap;max-width:90vw;';
+    document.body.appendChild(t);
+  }
+  t.textContent=msg;
+  t.style.background=type==='error'?'#dc2626':type==='success'?'#16a34a':'#1f2937';
+  t.style.transform='translateX(-50%) translateY(0)';
+  clearTimeout(t._t);
+  t._t=setTimeout(()=>{t.style.transform='translateX(-50%) translateY(-80px)';},3000);
+}
+function showLoading(){document.getElementById('loading-cover').classList.add('show');}
+function hideLoading(){document.getElementById('loading-cover').classList.remove('show');}
+
+// ===================================================
+// EDIT FUNCTIONS
+// ===================================================
+function editLog(id){
+  const log=cache.logs.find(l=>l.id===id);
+  if(!log){showToast('記録が見つかりません','error');return;}
+  const sel=document.getElementById('edit-log-vehicle');
+  sel.innerHTML='<option value="">車両を選択</option>';
+  cache.vehicles.forEach(v=>{sel.innerHTML+=`<option value="${esc(v.plate)}">${esc(v.plate)}${v.name?' — '+esc(v.name):''}</option>`;});
+  document.getElementById('edit-log-id').value=id;
+  document.getElementById('edit-log-date').value=log.depDate||'';
+  document.getElementById('edit-log-vehicle').value=log.vehicle||'';
+  document.getElementById('edit-log-driver').value=log.driver||'';
+  document.getElementById('edit-log-dest').value=log.dest||'';
+  document.getElementById('edit-log-depodo').value=log.depOdo!=null?log.depOdo:'';
+  document.getElementById('edit-log-deptime').value=log.depTime||'';
+  document.getElementById('edit-log-arrodo').value=log.arrOdo!=null?log.arrOdo:'';
+  document.getElementById('edit-log-arrtime').value=log.arrTime||'';
+  document.getElementById('edit-log-dist').value=log.dist!=null?log.dist:'';
+  document.getElementById('edit-alc-bt').value=log.alcBt||'';
+  document.getElementById('edit-alc-bd').value=log.alcBd||'あり';
+  document.getElementById('edit-alc-br').value=log.alcBr!=null?log.alcBr:'';
+  document.getElementById('edit-alc-bk').value=log.alcBk||'なし';
+  document.getElementById('edit-alc-bc').value=log.alcBc||'';
+  document.getElementById('edit-alc-at').value=log.alcAt||'';
+  document.getElementById('edit-alc-ad').value=log.alcAd||'あり';
+  document.getElementById('edit-alc-ar').value=log.alcAr!=null?log.alcAr:'';
+  document.getElementById('edit-alc-ak').value=log.alcAk||'なし';
+  document.getElementById('edit-alc-ac').value=log.alcAc||'';
+  document.getElementById('edit-alc-bm').value=log.alcBm||'対面';
+  document.getElementById('edit-alc-am').value=log.alcAm||'対面';
+  document.getElementById('edit-priv-dist').value=log.privDist!=null?log.privDist:'';
+  document.getElementById('edit-priv-memo').value=log.privMemo||'';
+  const eh=document.getElementById('edit-alc-header');
+  const eb=document.getElementById('edit-alc-body');
+  if(eh&&!eh._attached){
+    eh.addEventListener('click',()=>{const open=eb.classList.contains('open');eb.classList.toggle('open',!open);eh.querySelector('.alc-arrow').style.transform=open?'rotate(0deg)':'rotate(180deg)';});
+    eh._attached=true;
+  }
+  document.getElementById('modal-edit-log').classList.add('open');
+}
+
+function onEditDistChange(){
+  const dist=parseFloat(document.getElementById('edit-log-dist').value);
+  const depOdo=parseFloat(document.getElementById('edit-log-depodo').value);
+  if(!isNaN(dist)&&!isNaN(depOdo))document.getElementById('edit-log-arrodo').value=depOdo+dist;
+}
+function onEditArrOdoChange(){
+  const arrOdo=parseFloat(document.getElementById('edit-log-arrodo').value);
+  const depOdo=parseFloat(document.getElementById('edit-log-depodo').value);
+  if(!isNaN(arrOdo)&&!isNaN(depOdo))document.getElementById('edit-log-dist').value=Math.round(arrOdo-depOdo);
+}
+
+async function saveLogEdit(){
+  const id=document.getElementById('edit-log-id').value;
+  const log=cache.logs.find(l=>l.id===id);
+  if(!log){showToast('記録が見つかりません','error');return;}
+  const depOdo=parseFloat(document.getElementById('edit-log-depodo').value)||null;
+  const arrOdo=parseFloat(document.getElementById('edit-log-arrodo').value)||null;
+  const patch={
+    depDate:document.getElementById('edit-log-date').value,
+    vehicle:document.getElementById('edit-log-vehicle').value,
+    driver:document.getElementById('edit-log-driver').value.trim(),
+    dest:document.getElementById('edit-log-dest').value.trim(),
+    depOdo,depTime:document.getElementById('edit-log-deptime').value,
+    arrOdo,arrTime:document.getElementById('edit-log-arrtime').value,
+    dist:(depOdo!=null&&arrOdo!=null&&arrOdo>=depOdo)?Math.round(arrOdo-depOdo):null,
+    alcBt:document.getElementById('edit-alc-bt').value,
+    alcBd:document.getElementById('edit-alc-bd').value,
+    alcBr:parseFloat(document.getElementById('edit-alc-br').value)||null,
+    alcBk:document.getElementById('edit-alc-bk').value,
+    alcBc:document.getElementById('edit-alc-bc').value,
+    alcAt:document.getElementById('edit-alc-at').value,
+    alcAd:document.getElementById('edit-alc-ad').value,
+    alcAr:parseFloat(document.getElementById('edit-alc-ar').value)||null,
+    alcAk:document.getElementById('edit-alc-ak').value,
+    alcAc:document.getElementById('edit-alc-ac').value,
+    alcBm:document.getElementById('edit-alc-bm').value,
+    alcAm:document.getElementById('edit-alc-am').value,
+    privDist:parseFloat(document.getElementById('edit-priv-dist').value)||null,
+    privMemo:document.getElementById('edit-priv-memo').value,
+  };
+  patch.arrDate=arrOdo?(log.arrDate||patch.depDate):null;
+  if(!patch.depDate||!patch.vehicle){showToast('日付と車両は必須です','error');return;}
+  showLoading();
+  try{
+    await spUpdate('log',id,patch);
+    Object.assign(cache.logs.find(l=>l.id===id),patch);
+    closeModal('edit-log');render();
+    showToast('変更を保存しました ✓','success');
+  }catch(e){showToast('保存失敗: '+e.message,'error');}
+  finally{hideLoading();}
+}
+
+function editFuel(id){
+  const f=cache.fuels.find(x=>x.id===id);
+  if(!f){showToast('記録が見つかりません','error');return;}
+  const sel=document.getElementById('edit-fuel-veh');
+  sel.innerHTML='<option value="">車両を選択</option>';
+  cache.vehicles.forEach(v=>{sel.innerHTML+=`<option value="${esc(v.plate)}">${esc(v.plate)}${v.name?' — '+esc(v.name):''}</option>`;});
+  document.getElementById('edit-fuel-id').value=id;
+  document.getElementById('edit-fuel-date').value=f.date||'';
+  document.getElementById('edit-fuel-veh').value=f.vehicle||'';
+  document.getElementById('edit-fuel-liters').value=f.liters!=null?f.liters:'';
+  document.getElementById('edit-fuel-odo').value=f.odo!=null?f.odo:'';
+  document.getElementById('modal-edit-fuel').classList.add('open');
+}
+async function saveFuelEdit(){
+  const id=document.getElementById('edit-fuel-id').value;
+  const patch={
+    date:document.getElementById('edit-fuel-date').value,
+    vehicle:document.getElementById('edit-fuel-veh').value,
+    liters:parseFloat(document.getElementById('edit-fuel-liters').value)||null,
+    odo:parseFloat(document.getElementById('edit-fuel-odo').value)||null,
+  };
+  if(!patch.date||!patch.vehicle){showToast('日付と車両は必須です','error');return;}
+  showLoading();
+  try{
+    await spUpdate('fuel',id,patch);
+    Object.assign(cache.fuels.find(f=>f.id===id),patch);
+    closeModal('edit-fuel');render();
+    showToast('変更を保存しました ✓','success');
+  }catch(e){showToast('保存失敗: '+e.message,'error');}
+  finally{hideLoading();}
+}
+
+function editVehicle(id){
+  const v=cache.vehicles.find(x=>x.id===id);
+  if(!v){showToast('車両が見つかりません','error');return;}
+  document.getElementById('edit-v-id').value=id;
+  document.getElementById('edit-v-plate').value=v.plate||'';
+  document.getElementById('edit-v-name').value=v.name||'';
+  document.getElementById('edit-v-driver').value=v.driver||'';
+  document.getElementById('edit-v-dept').value=v.dept||'';
+  document.getElementById('edit-v-target').value=v.target!=null?v.target:'';
+  document.getElementById('modal-edit-vehicle').classList.add('open');
+}
+async function saveVehicleEdit(){
+  const id=document.getElementById('edit-v-id').value;
+  const patch={
+    plate:document.getElementById('edit-v-plate').value.trim(),
+    name:document.getElementById('edit-v-name').value.trim(),
+    driver:document.getElementById('edit-v-driver').value.trim(),
+    dept:document.getElementById('edit-v-dept').value.trim(),
+    target:parseFloat(document.getElementById('edit-v-target').value)||null,
+  };
+  if(!patch.plate||!patch.name){showToast('ナンバーと車名は必須です','error');return;}
+  showLoading();
+  try{
+    await spUpdate('vehicle',id,patch);
+    Object.assign(cache.vehicles.find(v=>v.id===id),patch);
+    closeModal('edit-vehicle');render();
+    showToast('変更を保存しました ✓','success');
+  }catch(e){showToast('保存失敗: '+e.message,'error');}
+  finally{hideLoading();}
+}
+
+window.addEventListener('load',()=>{
+  let waited=0;
+  const check=setInterval(()=>{
+    waited+=100;
+    if(window.msal&&window.msal.PublicClientApplication){clearInterval(check);bootApp();}
+    else if(waited>=8000){
+      clearInterval(check);
+      document.getElementById('boot').innerHTML='<div style="color:#fff;text-align:center;padding:20px"><div style="font-size:40px">⚠️</div><p style="margin-top:12px">MSAL読み込みエラー。インターネット接続を確認して再読み込みしてください。</p><button onclick="location.reload()" style="margin-top:16px;padding:10px 20px;background:#fff;border:none;border-radius:8px;cursor:pointer;color:#000;font-weight:700">再読み込み</button></div>';
+    }
+  },100);
+});
+</script>
