@@ -1,0 +1,17 @@
+{
+  "name": "走行管理システム",
+  "short_name": "SUN走行",
+  "description": "サン電設工業 車両の走行・給油・アルコールチェック管理アプリ",
+  "lang": "ja",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#2563c8",
+  "theme_color": "#2563c8",
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
