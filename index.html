@@ -14,9 +14,19 @@
 <!-- Tesseract(OCR)は重いため起動時には読み込まず、カメラ撮影を使う時だけ遅延読み込みする -->
 <link rel="apple-touch-icon" href="/icon-192.png">
 <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png">
-<title>走行管理 v7.14</title>
+<title>走行管理 v8.0</title>
 <!-- ============================================================
-     走行管理システム  Version 7.14  (2026-06-24)
+     走行管理システム  Version 8.0  (2026-11-16)
+     変更点(v8.0):
+       - 到着登録で行先を修正できるように（出発時の行先を初期表示、履歴から選択可）
+       - 給油レシートの写真管理を追加（SharePointドキュメントライブラリ「General/☆走行距離管理表及びアルコールチェック☆/給油レシート/期/氏名」に保存）
+         ・給油入力/編集で撮影、一覧に🧾、記録削除時は写真を「削除済み」フォルダへ移動
+         ・「🧾 総務」タブを追加：全員分の給油レシート一覧（撮影済み/未撮影の件数、未撮影だけ表示、未撮影分をあとから撮影・登録）
+         ・要: 給油記録リストに receiptId 列（1行テキスト）を追加
+         ・保存ボタン連打での二重登録を防止、撮り直し時は新しい写真を元のファイル名で保存
+       - レポートに「車両別燃費管理表（月別）」の印刷/PDFを追加（社内様式に準拠、1台1枚・A4横）
+       - レポートに「燃費統計表（期別・全車両）」の印刷/PDFを追加（10月決算、期は自動判定 例:2026.11〜2027.10=58期）
+         ・車名に「トラック」を含む車両は対象外。月平均・車両平均は単純平均（社内様式どおり）
      変更点(v7.14):
        - まとめ入力で、走行していない空欄の日を自動入力しないよう修正
          ・記録のある日／この画面で入力した日だけ自動補完（行先コピー・距離・連鎖）
@@ -371,7 +381,7 @@ datalist option{font-size:16px;}
 <div id="app" style="display:none;height:100vh;flex-direction:column;">
   <div class="app-header">
     <span class="logo">🚗</span>
-    <h1>走行管理 <span style="font-size:10px;font-weight:400;color:var(--text3);vertical-align:middle">v7.14</span></h1>
+    <h1>走行管理 <span style="font-size:10px;font-weight:400;color:var(--text3);vertical-align:middle">v8.0</span></h1>
     <span class="user" id="user-display"></span>
     <button id="install-btn-header" onclick="promptInstall()" style="display:none;padding:6px 12px;background:var(--accent);border:none;border-radius:8px;color:#fff;font-size:12px;font-weight:700;cursor:pointer;margin-right:6px;">📲 インストール</button>
     <button class="sign-out-btn" onclick="signOut()">ログアウト</button>
@@ -391,6 +401,7 @@ datalist option{font-size:16px;}
     <button class="tab" onclick="switchTab('bulk')">📝 まとめ入力</button>
     <button class="tab" onclick="switchTab('report')">📊 レポート</button>
     <button class="tab" onclick="switchTab('vehicles')">🚘 車両</button>
+    <button class="tab" onclick="switchTab('soumu')">🧾 総務</button>
   </div>
 
   <div class="main" id="main-content">
@@ -471,6 +482,26 @@ datalist option{font-size:16px;}
         </div>
       </div>
       <div class="card">
+        <div class="card-title">車両別燃費管理表（月別） <span style="font-size:11px;color:var(--text2);font-weight:400">（給油記録から作成）</span></div>
+        <div style="font-size:11px;color:var(--text3);margin-bottom:10px">上の「月を選択」を使います。車両を選ばない場合は、その月に給油のある全車両を1台1枚で出力します。</div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap">
+          <div class="field" style="flex:1;margin:0;min-width:160px"><label style="font-size:11px">車両</label>
+            <select id="rep-fuel-vehicle"><option value="">全車両（給油のある車両）</option></select>
+          </div>
+          <button class="submit-btn" style="width:auto;padding:13px 18px;margin:0;align-self:flex-end;background:#dc2626" onclick="printFuelSheet()">🖨 燃費管理表 印刷 / PDF</button>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title">燃費統計表（期別・全車両） <span style="font-size:11px;color:var(--text2);font-weight:400">（11月〜翌10月）</span></div>
+        <div style="font-size:11px;color:var(--text3);margin-bottom:10px">期は今日の日付から自動で選ばれます（10月決算）。車名に「トラック」を含む車両は統計の対象外です。</div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap">
+          <div class="field" style="flex:1;margin:0;min-width:160px"><label style="font-size:11px">期</label>
+            <select id="rep-period"></select>
+          </div>
+          <button class="submit-btn" style="width:auto;padding:13px 18px;margin:0;align-self:flex-end;background:#dc2626" onclick="printFuelStats()">🖨 燃費統計表 印刷 / PDF</button>
+        </div>
+      </div>
+      <div class="card">
         <div class="card-title">総務向け：日報・アルコールチェック記録 <span style="font-size:11px;color:var(--text2);font-weight:400">（全員・日付順）</span></div>
         <div style="font-size:11px;color:var(--text3);margin-bottom:10px">上の「月を選択」「ドライバーで絞り込み」を使います。アルコールチェック（乗車前/後）と私用走行を一覧・出力できます。</div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
@@ -480,6 +511,24 @@ datalist option{font-size:16px;}
         </div>
       </div>
       <div id="report-area"></div>
+    </div>
+
+    <!-- 総務（全員分の給油レシート管理） -->
+    <div class="tab-page" id="tab-soumu">
+      <div class="card">
+        <div class="card-title">🧾 給油レシート管理 <span style="font-size:11px;color:var(--text2);font-weight:400">（総務用・全員分）</span></div>
+        <div style="font-size:12px;color:var(--text2);margin-bottom:12px;line-height:1.6">
+          撮り忘れの給油は <b style="color:#dc2626">📷 撮影</b> を押して、紙のレシートを撮ってください。その給油をした人のフォルダ（Teams「General」→「☆走行距離管理表及びアルコールチェック☆」→「給油レシート／期／氏名」）に保存されます。
+        </div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px">
+          <div class="field" style="flex:1;margin:0;min-width:140px"><label style="font-size:11px">月</label><input type="month" id="soumu-month" onchange="genReceiptList()"></div>
+          <div class="field" style="flex:1;margin:0;min-width:140px"><label style="font-size:11px">運転者</label><select id="soumu-driver" onchange="genReceiptList()"><option value="">全員</option></select></div>
+        </div>
+        <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;margin-bottom:4px">
+          <input type="checkbox" id="soumu-missing-only" onchange="genReceiptList()" style="width:18px;height:18px"> 未撮影だけ表示
+        </label>
+      </div>
+      <div id="soumu-area"></div>
     </div>
 
     <!-- VEHICLES -->
@@ -608,6 +657,10 @@ datalist option{font-size:16px;}
     </div>
     <div id="arr-info" style="display:none;background:var(--bg);border-radius:var(--radius-sm);padding:12px;margin-bottom:14px;font-size:13px;"></div>
     <div class="field">
+      <label>行先 <span style="font-weight:400;color:var(--text3);font-size:11px">（出発時の行先から変わったら修正）</span></label>
+      <input type="text" id="arr-dest" placeholder="例: 本社" list="dest-history" autocomplete="off">
+    </div>
+    <div class="field">
       <label>到着時 走行距離 (km) *</label>
       <div class="odo-wrap">
         <input type="number" id="arr-odo" placeholder="例: 12680" min="0" inputmode="numeric">
@@ -669,6 +722,7 @@ datalist option{font-size:16px;}
       </div>
     </div>
     <div id="fuel-dist-hint" style="font-size:12px;color:var(--text2);margin:-10px 0 12px;display:none;"></div>
+    <div class="field"><label>レシート写真</label><div id="new-receipt-box"></div></div>
     <div style="display:flex;gap:10px">
       <button class="submit-btn" style="background:var(--text3);flex:.4" onclick="closeModal('fuel')">キャンセル</button>
       <button class="submit-btn orange" style="flex:.6" id="fuel-submit" onclick="saveFuel()">給油を記録</button>
@@ -819,12 +873,16 @@ datalist option{font-size:16px;}
       <label>走行距離計 (km)</label>
       <div class="odo-wrap"><input type="number" id="edit-fuel-odo" min="0" inputmode="numeric"><button class="cam-btn" onclick="openOCR('edit-fuel-odo')">📷</button></div>
     </div>
+    <div class="field"><label>レシート写真</label><div id="edit-receipt-box"></div></div>
     <div style="display:flex;gap:10px">
       <button class="submit-btn" style="background:var(--text3);flex:.4" onclick="closeModal('edit-fuel')">キャンセル</button>
       <button class="submit-btn orange" style="flex:.6" onclick="saveFuelEdit()">保存</button>
     </div>
   </div>
 </div>
+
+<!-- レシート撮影用（カメラ/写真選択） -->
+<input type="file" id="receipt-input" accept="image/*" style="display:none" onchange="onReceiptPicked(this)">
 
 <!-- EDIT VEHICLE MODAL -->
 <div class="modal-overlay" id="modal-edit-vehicle">
@@ -1040,6 +1098,7 @@ function convertFromSP(k,f){
       odo:f.odo!=null?Number(f.odo):null,
       driver:f.driver||'',
       owner:f.owner||'',
+      receiptId:f.receiptId||'',
       deleted:f.deleted===true||f.deleted==='true'
     };
   }
@@ -1092,6 +1151,7 @@ function convertToSP(k,rec){
     if(rec.odo!=null)f.odo=rec.odo;
     if(rec.driver!=null)f.driver=rec.driver;
     if(rec.owner!=null)f.owner=rec.owner;
+    if(rec.receiptId)f.receiptId=rec.receiptId; // レシート写真(ドキュメントライブラリのdriveItem ID)
     f.deleted=rec.deleted===true; // ★必ず明示送信
     return f;
   }
@@ -1172,7 +1232,7 @@ function patchToSP(k,patch){
     log:['depDate','arrDate','vehicle','driver','owner','dest','depOdo','arrOdo','dist','depTime','arrTime',
          'alcBt','alcBd','alcBr','alcBk','alcBc','alcBm','alcAt','alcAd','alcAr','alcAk','alcAc','alcAm',
          'privDist','privMemo','memo','deleted'],
-    fuel:['date','vehicle','liters','odo','driver','owner','deleted'],
+    fuel:['date','vehicle','liters','odo','driver','owner','receiptId','deleted'],
     vehicle:['plate','name','dept','driver','target','owner','registeredBy']
   }[k]||[];
   for(const key of Object.keys(patch)){
@@ -1183,6 +1243,162 @@ function patchToSP(k,patch){
     f[key]=patch[key];
   }
   return f;
+}
+
+// ===================================================
+// 給油レシート写真（SharePointサイトのドキュメントライブラリに保存）
+//   給油レシート/58期（2026.11-2027.10）/山端/20261113_車両_28.0L.jpg
+//   給油記録を削除したら 給油レシート/削除済み/… へ移動（写真は消さない）
+//   給油リストの receiptId 列（1行テキスト）に driveItem ID を保存
+// ===================================================
+// 保存先: ドキュメント > General > ☆走行距離管理表及びアルコールチェック☆ > 給油レシート（Teams「General」チャネルのファイルタブから見える）
+const RECEIPT_ROOT=['General','☆走行距離管理表及びアルコールチェック☆','給油レシート'];
+const receiptPending={new:null,edit:null};   // 撮影済み・未アップロードの画像(Blob)
+let receiptTarget=null;                       // 'new' | 'edit' | 'ga:<fuelId>'
+function safeName(s){
+  const t=String(s||'').replace(/["*:<>?\/\\|#%]/g,'_').replace(/[\s.]+$/,'').trim();
+  return t||'未記入';
+}
+function kiFolderName(ds){
+  const ki=kiOfDate(ds),fy=ki+KI_OFFSET;
+  return `${ki}期（${fy-1}.11-${fy}.10）`;
+}
+function receiptFolderSegs(f,deleted){
+  const segs=[...RECEIPT_ROOT];
+  if(deleted)segs.push('削除済み');
+  segs.push(kiFolderName(f.date||todayStr()),safeName(f.driver));
+  return segs;
+}
+function receiptFileName(f){
+  const lit=f.liters!=null?Number(f.liters).toFixed(1)+'L':'';
+  return safeName([(f.date||todayStr()).replace(/-/g,''),f.vehicle,lit].filter(Boolean).join('_'))+'.jpg';
+}
+const encPath=segs=>segs.map(encodeURIComponent).join('/');
+// 撮影画像を縮小(長辺1600px・JPEG)して容量を抑える
+function compressImage(file){
+  return new Promise((resolve,reject)=>{
+    const url=URL.createObjectURL(file);
+    const img=new Image();
+    img.onload=()=>{
+      const MAX=1600,sc=Math.min(1,MAX/Math.max(img.naturalWidth,img.naturalHeight));
+      const c=document.createElement('canvas');
+      c.width=Math.round(img.naturalWidth*sc);c.height=Math.round(img.naturalHeight*sc);
+      c.getContext('2d').drawImage(img,0,0,c.width,c.height);
+      URL.revokeObjectURL(url);
+      c.toBlob(b=>b?resolve(b):reject(new Error('画像の変換に失敗しました')),'image/jpeg',0.82);
+    };
+    img.onerror=()=>{URL.revokeObjectURL(url);reject(new Error('画像を読み込めませんでした'));};
+    img.src=url;
+  });
+}
+async function uploadReceipt(f,blob){
+  token=await getToken();
+  const path=encPath([...receiptFolderSegs(f,false),receiptFileName(f)]);
+  // パス指定のアップロードは途中のフォルダ（期・名前）を自動作成する。同名はリネーム。
+  const r=await fetch(`https://graph.microsoft.com/v1.0/sites/${SP_SITE_ID}/drive/root:/${path}:/content?@microsoft.graph.conflictBehavior=rename`,
+    {method:'PUT',headers:{Authorization:'Bearer '+token,'Content-Type':'image/jpeg'},body:blob});
+  if(!r.ok)throw new Error('写真のアップロード失敗 '+r.status+': '+(await r.text()).slice(0,200));
+  return (await r.json()).id;
+}
+async function ensureFolder(segs){
+  let parent='';
+  for(const s of segs){
+    const url=parent?`/sites/${SP_SITE_ID}/drive/root:/${encPath(parent.split('/'))}:/children`:`/sites/${SP_SITE_ID}/drive/root/children`;
+    try{await gPost(url,{name:s,folder:{},'@microsoft.graph.conflictBehavior':'fail'});}
+    catch(e){if(!/^409/.test(String(e.message)))throw e;} // 409=既にある
+    parent=parent?parent+'/'+s:s;
+  }
+  return (await gGet(`/sites/${SP_SITE_ID}/drive/root:/${encPath(segs)}`)).id;
+}
+// 写真を「削除済み」フォルダへ移動（失敗しても記録の削除は止めない）
+async function moveReceiptToDeleted(f){
+  if(!f||!f.receiptId)return false;
+  try{
+    token=await getToken();
+    const folderId=await ensureFolder(receiptFolderSegs(f,true));
+    await gPatch(`/sites/${SP_SITE_ID}/drive/items/${encodeURIComponent(f.receiptId)}?@microsoft.graph.conflictBehavior=rename`,{parentReference:{id:folderId}});
+    return true;
+  }catch(e){console.warn('レシート写真の移動に失敗',e);showToast('レシート写真を「削除済み」へ移動できませんでした（写真は残っています）','error');return false;}
+}
+// 撮り直し: 古い写真を削除済みへ移した後、新しい写真の「 1」付きの名前を本来の名前に戻す（失敗しても支障なし）
+async function replaceOldReceipt(old,newId,rec){
+  if(!old||!old.receiptId||old.receiptId===newId)return;
+  if(await moveReceiptToDeleted(old)){
+    try{await gPatch(`/sites/${SP_SITE_ID}/drive/items/${encodeURIComponent(newId)}?@microsoft.graph.conflictBehavior=fail`,{name:receiptFileName(rec)});}
+    catch(e){console.warn('レシート写真の名前を戻せませんでした',e);}
+  }
+}
+async function openReceipt(fuelId){
+  const f=cache.fuels.find(x=>x.id===fuelId);
+  if(!f||!f.receiptId)return;
+  const win=window.open('','_blank'); // ポップアップブロック回避のため先に開く
+  try{
+    token=await getToken();
+    const it=await gGet(`/sites/${SP_SITE_ID}/drive/items/${encodeURIComponent(f.receiptId)}?$select=webUrl`);
+    if(win)win.location.href=it.webUrl;else location.href=it.webUrl;
+  }catch(e){if(win)win.close();showToast('写真を開けませんでした（移動・削除された可能性があります）: '+e.message,'error');}
+}
+function pickReceipt(target){
+  receiptTarget=target;
+  const inp=document.getElementById('receipt-input');
+  inp.value='';inp.click();
+}
+async function onReceiptPicked(inp){
+  const file=inp.files&&inp.files[0];
+  if(!file||!receiptTarget)return;
+  const target=receiptTarget;
+  try{
+    const blob=await compressImage(file);
+    if(target.startsWith('ga:')){await attachReceiptNow(target.slice(3),blob);return;}
+    receiptPending[target]=blob;
+    renderReceiptBox(target);
+  }catch(e){showToast(e.message,'error');}
+}
+function clearReceipt(target){receiptPending[target]=null;renderReceiptBox(target);}
+function renderReceiptBox(target){
+  const box=document.getElementById(target+'-receipt-box');
+  if(!box)return;
+  const blob=receiptPending[target];
+  let existing='';
+  if(target==='edit'){
+    const f=cache.fuels.find(x=>x.id===document.getElementById('edit-fuel-id').value);
+    if(f&&f.receiptId)existing=f.id;
+  }
+  if(blob){
+    const u=URL.createObjectURL(blob);
+    box.innerHTML=`<div style="display:flex;gap:10px;align-items:center">
+      <img src="${u}" style="width:64px;height:64px;object-fit:cover;border-radius:8px;border:1px solid var(--border)">
+      <div style="flex:1;font-size:12px;color:var(--text2)">${existing?'撮り直した写真に差し替えます':'保存時にアップロードします'}<br>${Math.round(blob.size/1024)}KB</div>
+      <button type="button" class="del-btn" onclick="clearReceipt('${target}')">✕</button></div>`;
+  }else if(existing){
+    box.innerHTML=`<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <span class="badge bg">🧾 撮影済み</span>
+      <button type="button" class="del-btn" onclick="openReceipt('${esc(existing)}')">表示</button>
+      <button type="button" class="del-btn" onclick="pickReceipt('${target}')">📷 撮り直す</button></div>`;
+  }else{
+    box.innerHTML=`<button type="button" class="submit-btn" style="background:var(--text2);margin:0;padding:11px;font-size:13px" onclick="pickReceipt('${target}')">📷 レシートを撮影 / 選択</button>`;
+  }
+}
+// 総務: 撮り忘れの紙レシートをあとから登録（その場でアップロードして記録に紐付け）
+async function attachReceiptNow(fuelId,blob){
+  const f=cache.fuels.find(x=>x.id===fuelId);
+  if(!f)return;
+  showLoading();
+  try{
+    const newId=await uploadReceipt(f,blob);
+    const old={...f};
+    await spUpdate('fuel',fuelId,{receiptId:newId});
+    f.receiptId=newId;
+    await replaceOldReceipt(old,newId,f);
+    showToast('レシート写真を登録しました 🧾','success');
+    renderFuelTable();
+    if(document.getElementById('receipt-list'))genReceiptList();
+  }catch(e){showToast('登録失敗: '+receiptErrMsg(e),'error');}
+  finally{hideLoading();}
+}
+function receiptErrMsg(e){
+  const m=String(e&&e.message||e);
+  return /receiptId/.test(m)&&/not recognized/.test(m)?'SharePointの「給油記録」リストに receiptId 列（1行テキスト）を追加してください':m;
 }
 
 async function spDelete(k,recId){
@@ -1221,6 +1437,7 @@ async function startApp(){
     app.style.display='flex';
     document.getElementById('user-display').textContent=account.username;
     initForms();
+    renderReceiptBox('new');
     attachAlcoholToggles();
     bulkInit();
     render();
@@ -1330,7 +1547,7 @@ function renderFuelTable(){
       <td class="mono">${f.liters?f.liters.toFixed(1)+' L':'-'}</td>
       <td class="mono">${fmtNum(f.odo)}</td>
       <td>${effBadge}</td>
-      <td><button class="del-btn" onclick="editFuel('${esc(f.id)}')" style="margin-right:4px">✏️</button><button class="del-btn" onclick="deleteFuel('${esc(f.id)}')">🗑</button></td>
+      <td style="white-space:nowrap">${f.receiptId?`<button class="del-btn" title="レシートを表示" onclick="openReceipt('${esc(f.id)}')" style="margin-right:4px">🧾</button>`:''}<button class="del-btn" onclick="editFuel('${esc(f.id)}')" style="margin-right:4px">✏️</button><button class="del-btn" onclick="deleteFuel('${esc(f.id)}')">🗑</button></td>
     </tr>`;
   }).join('')}</tbody></table>`;
 }
@@ -1389,6 +1606,37 @@ function populateDriverFilter(){
   const drivers=[...new Set(cache.logs.filter(l=>!l.deleted&&l.driver).map(l=>l.driver))].sort();
   sel.innerHTML='<option value="">全員</option>'+drivers.map(d=>`<option value="${esc(d)}">${esc(d)}</option>`).join('');
   if(cur)sel.value=cur;
+  populateFuelVehicleSelect();
+  populatePeriodSelect();
+}
+
+// 期（10月決算）: 11月〜翌10月。56期=2024.11〜2025.10 → 期 = 決算年 − 1969
+const KI_OFFSET=1969;
+function kiOfDate(ds){const y=Number(ds.slice(0,4)),m=Number(ds.slice(5,7));return (m>=11?y+1:y)-KI_OFFSET;}
+function populatePeriodSelect(){
+  const sel=document.getElementById('rep-period');
+  if(!sel)return;
+  const cur=sel.value;
+  const nowKi=kiOfDate(todayStr());
+  const kis=new Set([nowKi]);
+  cache.fuels.forEach(f=>{if(f.date&&!f.deleted)kis.add(kiOfDate(f.date));});
+  sel.innerHTML=[...kis].sort((a,b)=>b-a).map(k=>{
+    const fy=k+KI_OFFSET;
+    return `<option value="${k}">${k}期（${fy-1}年11月〜${fy}年10月）${k===nowKi?' ※今期':''}</option>`;
+  }).join('');
+  sel.value=cur&&[...kis].includes(Number(cur))?cur:String(nowKi);
+}
+
+function populateFuelVehicleSelect(){
+  const sel=document.getElementById('rep-fuel-vehicle');
+  if(!sel)return;
+  const cur=sel.value;
+  const plates=[...new Set([...cache.vehicles.map(v=>v.plate),...cache.fuels.filter(f=>!f.deleted).map(f=>f.vehicle)].filter(Boolean))].sort();
+  sel.innerHTML='<option value="">全車両（給油のある車両）</option>'+plates.map(p=>{
+    const v=cache.vehicles.find(x=>x.plate===p);
+    return `<option value="${esc(p)}">${esc(p)}${v&&v.name?' '+esc(v.name):''}</option>`;
+  }).join('');
+  if(cur)sel.value=cur;
 }
 
 // ===================================================
@@ -1438,11 +1686,12 @@ function onDepVehicleChange(){
 function onArrSelect(){
   const id=document.getElementById('arr-select').value;
   const log=cache.logs.find(l=>l.id===id);
-  if(!log){document.getElementById('arr-info').style.display='none';return;}
+  if(!log){document.getElementById('arr-info').style.display='none';document.getElementById('arr-dest').value='';return;}
   document.getElementById('arr-info').style.display='block';
   document.getElementById('arr-info').innerHTML=`
-    <b>${esc(log.vehicle)}</b>　${esc(log.driver)}　→　${esc(log.dest)}<br>
+    <b>${esc(log.vehicle)}</b>　${esc(log.driver)}<br>
     出発: ${esc(log.depTime)}　出発km: <b>${fmtNum(log.depOdo)}</b>`;
+  document.getElementById('arr-dest').value=log.dest||''; // 出発時の行先を初期値に（到着時に修正可）
   const now=new Date();
   document.getElementById('arr-alc-at').value=pad(now.getHours())+':'+pad(now.getMinutes());
   if(log.alcBd)document.getElementById('arr-alc-ad').value=log.alcBd;
@@ -1532,6 +1781,7 @@ async function saveArrival(){
       arrDate:todayStr(),
       arrTime:pad(now.getHours())+':'+pad(now.getMinutes()),
       dist,
+      dest:document.getElementById('arr-dest').value.trim(),
       alcAt:document.getElementById('arr-alc-at').value,
       alcAd:document.getElementById('arr-alc-ad').value,
       alcAr:parseFloat(document.getElementById('arr-alc-ar').value)||null,
@@ -1546,6 +1796,7 @@ async function saveArrival(){
     showToast(`到着を記録しました 🏠 走行距離: +${dist!=null?dist:'?'}km`,'success');
     document.getElementById('arr-odo').value='';
     document.getElementById('arr-select').value='';
+    document.getElementById('arr-dest').value='';
     document.getElementById('arr-info').style.display='none';
   }catch(e){
     showToast('保存失敗: '+e.message,'error');
@@ -1570,19 +1821,36 @@ async function saveFuel(){
   const liters=parseFloat(document.getElementById('fuel-liters').value)||null;
   const odo=parseFloat(document.getElementById('fuel-odo').value)||null;
   if(!date||!vehicle){showToast('日付と車両は必須です','error');return;}
+  if(saveFuel.busy)return; // 連打で二重登録されないように
   const entry={id:uid(),date,vehicle,liters,odo,driver:getMyDriverName(),owner:getMyOwner()};
   const btn=document.getElementById('fuel-submit');btn.disabled=true;
+  saveFuel.busy=true;
   showLoading('給油を記録中...');
   try{
-    await appendItem('fuel',entry);
+    let photoMsg='';
+    if(receiptPending.new){
+      try{entry.receiptId=await uploadReceipt(entry,receiptPending.new);}
+      catch(e){
+        hideLoading();
+        if(!confirm('レシート写真をアップロードできませんでした。\n'+e.message+'\n\n写真なしで給油だけ記録しますか？（写真はあとで編集から追加できます）'))return;
+        showLoading();
+      }
+    }
+    const r=await appendItem('fuel',entry);
+    if(entry.receiptId&&!(r&&r.fields&&r.fields.receiptId)){
+      // SharePointに receiptId 列が無いと紐付けだけ落ちる（写真自体は保存済み）
+      photoMsg='（写真は保存しましたが、SharePointの給油記録リストに receiptId 列がないため紐付けできませんでした）';
+      delete entry.receiptId;
+    }
     cache.fuels.push(entry);
+    receiptPending.new=null;renderReceiptBox('new');
     closeModal('fuel');
     render();
-    showToast('給油を記録しました ⛽','success');
+    showToast(photoMsg?'給油を記録しました'+photoMsg:(entry.receiptId?'給油とレシートを記録しました ⛽🧾':'給油を記録しました ⛽'),photoMsg?'error':'success');
     document.getElementById('fuel-liters').value='';
     document.getElementById('fuel-odo').value='';
   }catch(e){showToast('保存失敗: '+e.message+' （保存されていません。電波の良い場所で再度お試しください）','error');}
-  finally{btn.disabled=false;hideLoading();}
+  finally{saveFuel.busy=false;btn.disabled=false;hideLoading();}
 }
 
 // ===================================================
@@ -1637,6 +1905,7 @@ function deleteFuel(id){
   },async()=>{
     await spUpdate('fuel',id,{deleted:true});
     cache.fuels=cache.fuels.filter(x=>x.id!==id);
+    await moveReceiptToDeleted(f); // 写真は消さずに「削除済み」フォルダへ
   });
   render();
 }
@@ -2031,6 +2300,264 @@ function printDailyLog(){
   </body></html>`);
   win.document.close();
 }
+// ===================================================
+// 車両別燃費管理表（月別・1台1枚、A4横）
+// 給油時の総走行距離(odo)の差 = 走行距離、走行距離÷給油量 = 燃費（満タン法）
+// ===================================================
+function toWareki(ds){ // 'YYYY-MM-DD' → 'R8.1.5'
+  if(!ds)return '';
+  const [y,m,d]=ds.split('-').map(Number);
+  if(y>=2019)return `R${y-2018}.${m}.${d}`;
+  return `${y}.${m}.${d}`;
+}
+function getFuelSheetData(month,plate){
+  const start=month+'-01';
+  const all=cache.fuels.filter(f=>f.vehicle===plate&&!f.deleted&&f.date)
+    .sort((a,b)=>a.date.localeCompare(b.date)||((a.odo||0)-(b.odo||0)));
+  const before=all.filter(f=>f.date<start&&f.odo);
+  let prevOdo=before.length?Number(before[before.length-1].odo):null;
+  if(prevOdo==null){ // 給油記録が無ければ走行記録の到着kmで代用
+    const lo=cache.logs.filter(l=>l.vehicle===plate&&!l.deleted&&l.depDate&&l.depDate<start&&l.arrOdo)
+      .map(l=>Number(l.arrOdo));
+    if(lo.length)prevOdo=Math.max(...lo);
+  }
+  const startOdo=prevOdo;
+  const rows=all.filter(f=>f.date.startsWith(month)).map(f=>{
+    const odo=f.odo?Number(f.odo):null;
+    const lit=f.liters!=null?Number(f.liters):null;
+    const dist=(odo!=null&&prevOdo!=null&&odo>prevOdo)?odo-prevOdo:null;
+    const eff=(dist!=null&&lit>0)?dist/lit:null;
+    if(odo!=null)prevOdo=odo;
+    return {date:f.date,odo,dist,lit,eff,driver:f.driver||''};
+  });
+  const lastOdo=rows.filter(r=>r.odo!=null).map(r=>r.odo).pop()??null;
+  const tDist=rows.reduce((s,r)=>s+(r.dist||0),0);
+  const tLit=rows.reduce((s,r)=>s+(r.lit||0),0);
+  const effLit=rows.filter(r=>r.dist!=null).reduce((s,r)=>s+(r.lit||0),0);
+  const avg=effLit>0?tDist/effLit:null;
+  const v=cache.vehicles.find(x=>x.plate===plate);
+  const manager=(v&&v.driver)||rows.map(r=>r.driver).find(Boolean)||'';
+  return {plate,name:v?v.name:'',manager,startOdo,rows,lastOdo,tDist,tLit,avg};
+}
+function buildFuelSheetPage(month,d){
+  const mNum=Number(month.slice(5,7));
+  const n=x=>x!=null?Number(x).toLocaleString('ja-JP'):'';
+  const f1=x=>x!=null?Number(x).toFixed(1):'';
+  const body=[];
+  const rowCount=Math.max(9,d.rows.length);
+  for(let i=0;i<rowCount;i++){
+    const r=d.rows[i]||{};
+    body.push(`<tr class="r">
+      <td class="b">${esc(toWareki(r.date))}</td>
+      <td class="b v">${n(r.odo)}</td><td class="b u">km</td>
+      <td class="v">${n(r.dist)}</td><td class="u">km</td>
+      <td class="b v">${f1(r.lit)}</td><td class="b u">ℓ</td>
+      <td class="v">${f1(r.eff)}</td><td class="u">km/ℓ</td>
+      <td class="b"></td></tr>`);
+  }
+  return `<div class="page">
+    <div class="top">
+      <div class="mon">${mNum}月<span class="veh">${esc(d.plate)}${d.name?'　'+esc(d.name):''}</span></div>
+      <table class="hd">
+        <tr><th>車　両　管　理　者</th><td class="mgr" colspan="2">${esc(d.manager)}</td></tr>
+        <tr><th>前月の最終走行距離</th><td class="num">${n(d.startOdo)}</td><td class="hu">km</td></tr>
+      </table>
+    </div>
+    <table class="sh">
+      <colgroup><col style="width:8%"><col style="width:17.5%"><col style="width:3.5%"><col style="width:13%"><col style="width:3.5%"><col style="width:13%"><col style="width:3.5%"><col style="width:13%"><col style="width:3.5%"><col style="width:21.5%"></colgroup>
+      <thead><tr><th>日　付</th><th colspan="2">総走行距離(給油時)</th><th colspan="2">走 行 距 離</th><th colspan="2">給 油 量</th><th colspan="2">燃　費</th><th>備　　考</th></tr></thead>
+      <tbody>${body.join('')}
+        <tr class="tl"><td></td><td colspan="2">当月総走行距離</td><td colspan="2">当月総走行距離</td><td colspan="2">当月総給油量</td><td colspan="2">当月平均燃費</td><td></td></tr>
+        <tr class="r tv"><td></td>
+          <td class="v">${n(d.lastOdo)}</td><td class="u">km</td>
+          <td class="v">${d.rows.length?n(d.tDist):''}</td><td class="u">km</td>
+          <td class="v">${d.rows.length?f1(d.tLit):''}</td><td class="u">ℓ</td>
+          <td class="v">${f1(d.avg)}</td><td class="u">km/ℓ</td><td></td></tr>
+      </tbody>
+    </table>
+  </div>`;
+}
+function printFuelSheet(){
+  const month=document.getElementById('rep-month').value;
+  if(!month){showToast('上の「月を選択」で対象月を選んでください','error');return;}
+  const sel=document.getElementById('rep-fuel-vehicle')?.value||'';
+  const plates=sel?[sel]:[...new Set(cache.fuels.filter(f=>!f.deleted&&f.date&&f.date.startsWith(month)).map(f=>f.vehicle).filter(Boolean))].sort();
+  if(plates.length===0){showToast(month+' の給油記録がありません','error');return;}
+  const pages=plates.map(p=>buildFuelSheetPage(month,getFuelSheetData(month,p))).join('');
+  const win=window.open('','_blank');
+  if(!win){showToast('ポップアップを許可してください','error');return;}
+  win.document.write(`<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8"><title>車両別燃費管理表 ${esc(month)}</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:'MS Mincho','Yu Mincho','Hiragino Mincho ProN','Noto Serif JP',serif;color:#111;padding:6mm}
+    .page{width:100%;page-break-after:always;padding-top:8mm}
+    .page:last-child{page-break-after:auto}
+    .top{display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:2mm}
+    .mon{color:#1a33e6;font-size:20px;padding-left:12mm}
+    .veh{color:#111;font-size:13px;margin-left:8mm}
+    table.hd{border-collapse:collapse;border:1.5px solid #111;font-size:12px;margin-right:22%;margin-bottom:4mm}
+    table.hd th{font-weight:normal;text-align:left;padding:2px 4px;border-right:1px solid #999;border-bottom:1px solid #ccc;letter-spacing:.15em;white-space:nowrap}
+    table.hd td{padding:2px 8px;border-bottom:1px solid #ccc;min-width:70px}
+    table.hd td.mgr{text-align:center;color:#3a9d5d;min-width:140px}
+    table.hd td.num{text-align:left}
+    table.hd td.hu{font-size:11px;text-align:right;min-width:30px}
+    table.sh{width:100%;border-collapse:collapse;border:3px double #111;table-layout:fixed}
+    table.sh th{font-weight:normal;font-size:16px;height:13mm;border:1px solid #999;letter-spacing:.2em}
+    table.sh td{border:1px solid #9aa3ad;border-left:none;border-right:none;height:14mm;text-align:center}
+    table.sh td+td{border-left:1px solid #9aa3ad}
+    table.sh td.v+td.u{border-left:none}
+    table.sh td.v{font-size:19px;text-align:left;padding-left:5mm;vertical-align:middle}
+    table.sh td.u{font-size:11px;vertical-align:bottom;text-align:left;padding-bottom:1mm}
+    table.sh td:first-child{font-size:13px}
+    table.sh td.b{background:#ddebf7}
+    table.sh tr.tl td{height:9mm;font-size:13px;background:#fff}
+    table.sh tr.tv td{height:14mm;background:#fff}
+    @page{size:A4 landscape;margin:6mm}
+    @media print{.noprint{display:none}body{padding:0}}
+    *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  </style></head><body>
+  ${pages}
+  <div class="noprint" style="text-align:center;margin-top:14px"><button onclick="window.print()" style="padding:10px 20px;font-size:14px;background:#2563c8;color:#fff;border:none;border-radius:8px;cursor:pointer;font-family:sans-serif">🖨 印刷 / PDFで保存</button></div>
+  <script>setTimeout(()=>window.print(),600);<\/script>
+  </body></html>`);
+  win.document.close();
+}
+
+// ===================================================
+// 燃費統計表（期別・全車両、A4横）
+// 各車両の月の燃費 = 月別燃費管理表の「当月平均燃費」と同じ値
+// 平均値(月) = その月に値のある車両の単純平均、最下段 = 車両ごとの月値の単純平均
+// ===================================================
+function getFuelStatsData(ki){
+  const fy=ki+KI_OFFSET;
+  const months=[];
+  for(let i=0;i<12;i++){const m=((10+i)%12)+1;const y=m>=11?fy-1:fy;months.push({y,m,key:y+'-'+pad(m)});}
+  const first=months[0].key+'-01',last=months[11].key+'-31';
+  const isTruck=p=>{const v=cache.vehicles.find(x=>x.plate===p);return !!(v&&/トラック/.test(v.name||''));};
+  const inPeriod=new Set(cache.fuels.filter(f=>!f.deleted&&f.date&&f.date>=first&&f.date<=last).map(f=>f.vehicle).filter(Boolean));
+  const plates=[...new Set([...cache.vehicles.map(v=>v.plate),...inPeriod])].filter(p=>p&&!isTruck(p));
+  const thisMonth=todayStr().slice(0,7);
+  const cols=plates.map(p=>{
+    const v=cache.vehicles.find(x=>x.plate===p);
+    const vals=months.map(mo=>{
+      if(mo.key>thisMonth)return {future:true,val:null};
+      const d=getFuelSheetData(mo.key,p);
+      return {future:mo.key===thisMonth&&d.avg==null,val:d.avg}; // 当月で未給油は空欄
+    });
+    const ok=vals.filter(x=>x.val!=null).map(x=>x.val);
+    return {plate:p,label:(v&&v.driver)||p,name:v?v.name:'',vals,avg:ok.length?ok.reduce((s,x)=>s+x,0)/ok.length:null};
+  });
+  const rowAvg=months.map((_,i)=>{const a=cols.map(c=>c.vals[i].val).filter(x=>x!=null);return a.length?a.reduce((s,x)=>s+x,0)/a.length:null;});
+  const okRows=rowAvg.filter(x=>x!=null);
+  const grand=okRows.length?okRows.reduce((s,x)=>s+x,0)/okRows.length:null;
+  const wareki=(y,m)=>`令和${y-2018}年${m}月`;
+  return {ki,months,cols,rowAvg,grand,range:`${wareki(months[0].y,months[0].m)}～${wareki(months[11].y,months[11].m)}`};
+}
+function buildFuelStatsPage(d){
+  const f1=x=>x!=null?x.toFixed(1):'';
+  const f2=x=>x!=null?x.toFixed(2):'';
+  const cell=c=>c.future?'':(c.val!=null?f1(c.val):'−');
+  const rows=d.months.map((mo,i)=>`<tr class="${i%2?'z':''}">
+      <td class="mo">${mo.m}月</td><td class="av">${f2(d.rowAvg[i])}</td><td class="u">km/ℓ</td>
+      ${d.cols.map(c=>`<td class="n">${cell(c.vals[i])}</td>`).join('')}<td></td></tr>`).join('');
+  return `<div class="page">
+    <h1>${d.ki}期　燃 費 統 計 表</h1>
+    <div class="rng">${esc(d.range)}</div>
+    <table class="st">
+      <colgroup><col style="width:3.5%"><col style="width:6.5%"><col style="width:3%">${d.cols.map(()=>'<col>').join('')||'<col>'}<col style="width:8%"></colgroup>
+      <thead>
+        <tr><th rowspan="2" class="mo">月</th><th rowspan="2" colspan="2">平均値</th><th colspan="${d.cols.length||1}">車両別燃費</th><th rowspan="2" class="rm">備考欄</th></tr>
+        <tr>${d.cols.map(c=>`<th class="vn">${esc(c.label)}${c.name?`<small>${esc(c.name)}</small>`:''}</th>`).join('')||'<th></th>'}</tr>
+      </thead>
+      <tbody>${rows}
+        <tr class="tt"><td></td><td class="gd">${f2(d.grand)}</td><td></td>${d.cols.map(c=>`<td class="ca">${f1(c.avg)}</td>`).join('')}<td></td></tr>
+      </tbody>
+    </table>
+    <div class="nt">※単位はkm/ℓとする<br>※トラックは燃費の統計からは対象外とする<br>※−は給油記録なし　／　出力日: ${todayStr()}</div>
+  </div>`;
+}
+function printFuelStats(){
+  const ki=Number(document.getElementById('rep-period')?.value||kiOfDate(todayStr()));
+  const d=getFuelStatsData(ki);
+  if(d.cols.length===0){showToast('対象の車両がありません','error');return;}
+  const win=window.open('','_blank');
+  if(!win){showToast('ポップアップを許可してください','error');return;}
+  win.document.write(`<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8"><title>${ki}期 燃費統計表</title>
+  <style>${FUEL_STATS_CSS}</style></head><body>
+  ${buildFuelStatsPage(d)}
+  <div class="noprint" style="text-align:center;margin-top:14px"><button onclick="window.print()" style="padding:10px 20px;font-size:14px;background:#2563c8;color:#fff;border:none;border-radius:8px;cursor:pointer;font-family:sans-serif">🖨 印刷 / PDFで保存</button></div>
+  <script>setTimeout(()=>window.print(),600);<\/script>
+  </body></html>`);
+  win.document.close();
+}
+const FUEL_STATS_CSS=`
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:'MS Mincho','Yu Mincho','Hiragino Mincho ProN','Noto Serif JP',serif;color:#111;padding:6mm}
+    .page{padding-top:4mm}
+    h1{text-align:center;font-weight:normal;font-size:22px;letter-spacing:.1em;margin-bottom:6mm}
+    .rng{display:inline-block;background:#bdd7ee;border:1.5px solid #111;border-bottom:none;padding:2px 12mm;font-size:13px}
+    table.st{width:100%;border-collapse:collapse;border:2px solid #111;table-layout:fixed}
+    table.st th{font-weight:normal;font-size:13px;border:1px solid #555;height:7.5mm;white-space:nowrap;overflow:hidden}
+    table.st th.mo{font-size:12px}
+    table.st th.vn small{display:block;font-size:8px;color:#555;line-height:1}
+    table.st td{border-left:1px solid #555;border-bottom:1px solid #bbb;height:10.5mm;text-align:right;padding-right:3mm;font-size:16px}
+    table.st td.mo{font-size:11px;text-align:center;padding:0}
+    table.st td.av{color:#22a05a;font-size:17px;text-align:center;padding:0;border-right:none}
+    table.st td.u{font-size:9px;vertical-align:bottom;text-align:left;padding:0 0 1px 1px;border-left:none}
+    table.st tr.z td{background:#f2f2f2}
+    table.st tr.tt td{border-top:1px solid #555;height:12mm;color:#22a05a}
+    table.st tr.tt td.gd{color:#4472c4;font-size:22px;text-align:center;padding:0}
+    .nt{text-align:right;font-size:11px;margin-top:3mm;line-height:1.6}
+    @page{size:A4 landscape;margin:6mm}
+    @media print{.noprint{display:none}body{padding:0}}
+    *{-webkit-print-color-adjust:exact;print-color-adjust:exact}`;
+
+// ===================================================
+// 総務向け 給油レシート一覧（全員・撮影済み/未撮影、未撮影はあとから登録）
+// ===================================================
+function openSoumu(){
+  const m=document.getElementById('soumu-month');
+  if(!m.value)m.value=todayStr().slice(0,7);
+  const sel=document.getElementById('soumu-driver');
+  const cur=sel.value;
+  const drivers=[...new Set(cache.fuels.filter(f=>!f.deleted&&f.driver).map(f=>f.driver))].sort((a,b)=>a.localeCompare(b,'ja'));
+  sel.innerHTML='<option value="">全員</option>'+drivers.map(d=>`<option value="${esc(d)}">${esc(d)}</option>`).join('');
+  if(cur&&drivers.includes(cur))sel.value=cur;
+  genReceiptList();
+}
+function genReceiptList(){
+  const area=document.getElementById('soumu-area');
+  const month=document.getElementById('soumu-month').value;
+  if(!month){area.innerHTML='<div class="card"><div class="empty"><p>月を選んでください</p></div></div>';return;}
+  const driverFilter=document.getElementById('soumu-driver').value||'';
+  const onlyMissing=document.getElementById('soumu-missing-only').checked;
+  let fuels=cache.fuels.filter(f=>!f.deleted&&f.date&&f.date.startsWith(month));
+  if(driverFilter)fuels=fuels.filter(f=>f.driver===driverFilter);
+  fuels.sort((a,b)=>(a.driver||'').localeCompare(b.driver||'','ja')||a.date.localeCompare(b.date));
+  const missing=fuels.filter(f=>!f.receiptId).length;
+  const shown=onlyMissing?fuels.filter(f=>!f.receiptId):fuels;
+  const [y,mo]=month.split('-').map(Number);
+  area.innerHTML=`
+  <div class="card" id="receipt-list">
+    <div class="card-title">${y}年${mo}月 給油レシート${driverFilter?' — '+esc(driverFilter):'（全員）'}</div>
+    <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+      <span class="badge bg" style="font-size:13px;padding:6px 10px">✅ 撮影済み ${fuels.length-missing}件</span>
+      <span class="badge ${missing?'br':'bg'}" style="font-size:13px;padding:6px 10px">${missing?'⚠️':'✅'} 未撮影 ${missing}件</span>
+    </div>
+    ${shown.length?`<div style="display:flex;flex-direction:column;gap:8px">
+    ${shown.map(f=>`<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--border);border-radius:10px;background:${f.receiptId?'var(--white)':'#fff7ed'}">
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:700;font-size:14px">${esc(f.date.slice(5).replace('-','/'))}　${esc(f.driver)||'（未記入）'}</div>
+        <div style="font-size:12px;color:var(--text2);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(f.vehicle)}　${f.liters!=null?Number(f.liters).toFixed(1)+' L':''}</div>
+      </div>
+      <div style="display:flex;gap:6px;flex-shrink:0">${f.receiptId
+        ?`<button class="del-btn" onclick="openReceipt('${esc(f.id)}')">🧾 表示</button><button class="del-btn" onclick="pickReceipt('ga:${esc(f.id)}')">撮り直す</button>`
+        :`<button class="del-btn" style="background:#dc2626;color:#fff;padding:10px 16px;font-weight:700;font-size:14px" onclick="pickReceipt('ga:${esc(f.id)}')">📷 撮影</button>`}</div>
+    </div>`).join('')}</div>`
+    :`<div class="empty"><p>${fuels.length?'未撮影のレシートはありません 🎉':'この月の給油記録はありません'}</p></div>`}
+  </div>`;
+}
+
 function exportDailyCSV(){
   const month=document.getElementById('rep-month').value;
   if(!month){showToast('上の「月を選択」で対象月を選んでください','error');return;}
@@ -2117,9 +2644,10 @@ function switchTab(name){
   document.querySelectorAll('.tab-page').forEach(el=>el.classList.remove('active'));
   document.querySelectorAll('.tab').forEach(el=>el.classList.remove('active'));
   document.getElementById('tab-'+name).classList.add('active');
-  const tabs=['home','logs','fuel-tab','bulk','report','vehicles'];
+  const tabs=['home','logs','fuel-tab','bulk','report','vehicles','soumu'];
   tabs.forEach((t,i)=>{if(t===name)document.querySelectorAll('.tab')[i].classList.add('active');});
   if(name==='bulk')renderBulkTable();
+  if(name==='soumu')openSoumu();
 }
 function openModal(name){
   document.getElementById('modal-'+name).classList.add('open');
@@ -2912,6 +3440,7 @@ function editFuel(id){
   document.getElementById('edit-fuel-veh').value=f.vehicle||'';
   document.getElementById('edit-fuel-liters').value=f.liters!=null?f.liters:'';
   document.getElementById('edit-fuel-odo').value=f.odo!=null?f.odo:'';
+  receiptPending.edit=null;renderReceiptBox('edit');
   document.getElementById('modal-edit-fuel').classList.add('open');
 }
 async function saveFuelEdit(){
@@ -2923,14 +3452,23 @@ async function saveFuelEdit(){
     odo:parseFloat(document.getElementById('edit-fuel-odo').value)||null,
   };
   if(!patch.date||!patch.vehicle){showToast('日付と車両は必須です','error');return;}
+  if(saveFuelEdit.busy)return; // 連打で写真が二重登録されないように
+  saveFuelEdit.busy=true;
   showLoading();
   try{
+    const cur=cache.fuels.find(f=>f.id===id);
+    const old=cur?{...cur}:null;
+    if(receiptPending.edit){
+      patch.receiptId=await uploadReceipt({...cur,...patch},receiptPending.edit);
+    }
     await spUpdate('fuel',id,patch);
-    Object.assign(cache.fuels.find(f=>f.id===id),patch);
+    Object.assign(cur,patch);
+    if(patch.receiptId)await replaceOldReceipt(old,patch.receiptId,cur); // 差し替え前の写真は削除済みへ
+    receiptPending.edit=null;
     closeModal('edit-fuel');render();
     showToast('変更を保存しました ✓','success');
-  }catch(e){showToast('保存失敗: '+e.message,'error');}
-  finally{hideLoading();}
+  }catch(e){showToast('保存失敗: '+receiptErrMsg(e),'error');}
+  finally{saveFuelEdit.busy=false;hideLoading();}
 }
 
 function editVehicle(id){
