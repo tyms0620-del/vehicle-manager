@@ -13,9 +13,12 @@
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="apple-touch-icon" href="/icon-192.png">
 <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png">
-<title>走行管理 v8.2</title>
+<title>走行管理 v8.3</title>
 <!-- ============================================================
-     走行管理システム  Version 8.2  (2026-11-17)
+     走行管理システム  Version 8.3  (2026-11-17)
+     変更点(v8.3):
+       - レシート写真の保存ルール変更：給油レシート/期（例: 58期、11月に自動繰り上がり）に直接保存、名前ごとのフォルダは廃止
+       - ファイル名を「名前-日付-車両番号.jpg」に（例: 山端-20261115-岡山300あ1111.jpg）。削除済みは 削除済み/期 へ
      変更点(v8.2):
        - 走行距離のカメラ読み取り（OCR）を廃止（7セグ表示が読めないため。手入力のみ）
        - レポートを燃費管理表・燃費統計表・アルコールチェック記録簿の3つに整理（旧月次/年度レポート・日報を削除）
@@ -376,7 +379,7 @@ datalist option{font-size:16px;}
 <div id="app" style="display:none;height:100vh;flex-direction:column;">
   <div class="app-header">
     <span class="logo">🚗</span>
-    <h1>走行管理 <span style="font-size:10px;font-weight:400;color:var(--text3);vertical-align:middle">v8.2</span></h1>
+    <h1>走行管理 <span style="font-size:10px;font-weight:400;color:var(--text3);vertical-align:middle">v8.3</span></h1>
     <span class="user" id="user-display"></span>
     <button id="install-btn-header" onclick="promptInstall()" style="display:none;padding:6px 12px;background:var(--accent);border:none;border-radius:8px;color:#fff;font-size:12px;font-weight:700;cursor:pointer;margin-right:6px;">📲 インストール</button>
     <button class="sign-out-btn" onclick="signOut()">ログアウト</button>
@@ -464,7 +467,7 @@ datalist option{font-size:16px;}
         <div class="card">
           <div class="card-title">🧾 給油レシート管理 <span style="font-size:11px;color:var(--text2);font-weight:400">（総務用・全員分）</span></div>
           <div style="font-size:12px;color:var(--text2);margin-bottom:12px;line-height:1.6">
-            撮り忘れの給油は <b style="color:#dc2626">📷 撮影</b> で紙のレシートを撮るか、撮影済みの写真があれば <b>🖼 写真を選択</b> で選んでください。その給油をした人のフォルダ（Teams「General」→「☆走行距離管理表及びアルコールチェック☆」→「給油レシート／期／氏名」）に保存されます。
+            撮り忘れの給油は <b style="color:#dc2626">📷 撮影</b> で紙のレシートを撮るか、撮影済みの写真があれば <b>🖼 写真を選択</b> で選んでください。Teams「General」→「☆走行距離管理表及びアルコールチェック☆」→「給油レシート」→「期（例: 58期）」フォルダに「名前-日付-車両番号.jpg」で保存されます。
           </div>
           <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px">
             <div class="field" style="flex:1;margin:0;min-width:140px"><label style="font-size:11px">月</label><input type="month" id="soumu-month" onchange="genReceiptList()"></div>
@@ -1208,19 +1211,19 @@ function safeName(s){
   const t=String(s||'').replace(/["*:<>?\/\\|#%]/g,'_').replace(/[\s.]+$/,'').trim();
   return t||'未記入';
 }
+// 期フォルダ名（例: 58期）。給油日から自動で決まり、11月から次の期に繰り上がる
 function kiFolderName(ds){
-  const ki=kiOfDate(ds),fy=ki+KI_OFFSET;
-  return `${ki}期（${fy-1}.11-${fy}.10）`;
+  return kiOfDate(ds)+'期';
 }
 function receiptFolderSegs(f,deleted){
   const segs=[...RECEIPT_ROOT];
   if(deleted)segs.push('削除済み');
-  segs.push(kiFolderName(f.date||todayStr()),safeName(f.driver));
+  segs.push(kiFolderName(f.date||todayStr()));
   return segs;
 }
+// ファイル名: 名前-日付-車両番号.jpg（例: 山端-20261105-岡山300あ1111.jpg）。同名があれば「 1」等が付く
 function receiptFileName(f){
-  const lit=f.liters!=null?Number(f.liters).toFixed(1)+'L':'';
-  return safeName([(f.date||todayStr()).replace(/-/g,''),f.vehicle,lit].filter(Boolean).join('_'))+'.jpg';
+  return [safeName(f.driver),(f.date||todayStr()).replace(/-/g,''),safeName(f.vehicle)].join('-')+'.jpg';
 }
 const encPath=segs=>segs.map(encodeURIComponent).join('/');
 // 撮影画像を縮小(長辺1600px・JPEG)して容量を抑える
@@ -1243,7 +1246,7 @@ function compressImage(file){
 async function uploadReceipt(f,blob){
   token=await getToken();
   const path=encPath([...receiptFolderSegs(f,false),receiptFileName(f)]);
-  // パス指定のアップロードは途中のフォルダ（期・名前）を自動作成する。同名はリネーム。
+  // パス指定のアップロードは途中のフォルダ（期）を自動作成する。同名はリネーム。
   const r=await fetch(`https://graph.microsoft.com/v1.0/sites/${SP_SITE_ID}/drive/root:/${path}:/content?@microsoft.graph.conflictBehavior=rename`,
     {method:'PUT',headers:{Authorization:'Bearer '+token,'Content-Type':'image/jpeg'},body:blob});
   if(!r.ok)throw new Error('写真のアップロード失敗 '+r.status+': '+(await r.text()).slice(0,200));
