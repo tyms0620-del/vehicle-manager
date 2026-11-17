@@ -13,9 +13,12 @@
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="apple-touch-icon" href="/icon-192.png">
 <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png">
-<title>走行管理 v8.3</title>
+<title>走行管理 v8.4</title>
 <!-- ============================================================
-     走行管理システム  Version 8.3  (2026-11-17)
+     走行管理システム  Version 8.4  (2026-11-17)
+     変更点(v8.4):
+       - アルコール測定値が未記入なら0で保存（出発・到着・編集）。0を入力しても空欄になっていた不具合を修正
+       - 到着時に乗車後アルコールチェック（確認者・時刻）が未記入なら警告。OKで到着は記録できる
      変更点(v8.3):
        - レシート写真の保存ルール変更：給油レシート/期（例: 58期、11月に自動繰り上がり）に直接保存、名前ごとのフォルダは廃止
        - ファイル名を「名前-日付-車両番号.jpg」に（例: 山端-20261115-岡山300あ1111.jpg）。削除済みは 削除済み/期 へ
@@ -379,7 +382,7 @@ datalist option{font-size:16px;}
 <div id="app" style="display:none;height:100vh;flex-direction:column;">
   <div class="app-header">
     <span class="logo">🚗</span>
-    <h1>走行管理 <span style="font-size:10px;font-weight:400;color:var(--text3);vertical-align:middle">v8.3</span></h1>
+    <h1>走行管理 <span style="font-size:10px;font-weight:400;color:var(--text3);vertical-align:middle">v8.4</span></h1>
     <span class="user" id="user-display"></span>
     <button id="install-btn-header" onclick="promptInstall()" style="display:none;padding:6px 12px;background:var(--accent);border:none;border-radius:8px;color:#fff;font-size:12px;font-weight:700;cursor:pointer;margin-right:6px;">📲 インストール</button>
     <button class="sign-out-btn" onclick="signOut()">ログアウト</button>
@@ -1699,6 +1702,12 @@ function onFuelVehicleChange(){
 // ===================================================
 // SAVE DEPARTURE
 // ===================================================
+// アルコール測定値（mg/L）: 未記入は 0 として保存（0 を入力した場合も 0 のまま）
+function alcNum(id){
+  const v=String(document.getElementById(id)?.value??'').trim();
+  const n=parseFloat(v);
+  return v===''||isNaN(n)?0:n;
+}
 async function saveDeparture(){
   const vehicle=document.getElementById('dep-vehicle').value;
   const driver=document.getElementById('dep-driver').value.trim()||getMyDriverName();
@@ -1716,7 +1725,7 @@ async function saveDeparture(){
     depTime:pad(now.getHours())+':'+pad(now.getMinutes()),
     alcBt:document.getElementById('dep-alc-bt').value,
     alcBd:document.getElementById('dep-alc-bd').value,
-    alcBr:parseFloat(document.getElementById('dep-alc-br').value)||null,
+    alcBr:alcNum('dep-alc-br'),
     alcBk:document.getElementById('dep-alc-bk').value,
     alcBc:document.getElementById('dep-alc-bc').value,
     alcBm:document.getElementById('dep-alc-bm').value,
@@ -1754,6 +1763,16 @@ async function saveArrival(){
   const log=cache.logs.find(l=>l.id===logId);
   if(!log){showToast('記録が見つかりません','error');return;}
   if(!validateOdoArrival(log.depOdo,arrOdo))return;
+  // 乗車後アルコールチェックの未記入は警告するが、到着の記録は止めない
+  const alcMiss=[];
+  if(!document.getElementById('arr-alc-at').value)alcMiss.push('時刻');
+  if(!document.getElementById('arr-alc-ac').value.trim())alcMiss.push('確認者');
+  if(alcMiss.length&&!confirm(`⚠️ 乗車後のアルコールチェックが未済です（未記入: ${alcMiss.join('・')}）\n\nアルコールチェックをしてから記録してください。\nこのまま到着だけ記録しますか？\n（OK=到着を記録する／キャンセル=入力に戻る）`)){
+    const body=document.getElementById('alc-arr-body'),head=document.getElementById('alc-arr-header');
+    body.classList.add('open');const ar=head.querySelector('.alc-arrow');if(ar)ar.style.transform='rotate(180deg)';
+    document.getElementById(alcMiss[0]==='時刻'?'arr-alc-at':'arr-alc-ac').focus();
+    return;
+  }
 
   const now=new Date();
   const dist=log.depOdo!=null?Math.round(arrOdo-log.depOdo):null;
@@ -1769,7 +1788,7 @@ async function saveArrival(){
       dest:document.getElementById('arr-dest').value.trim(),
       alcAt:document.getElementById('arr-alc-at').value,
       alcAd:document.getElementById('arr-alc-ad').value,
-      alcAr:parseFloat(document.getElementById('arr-alc-ar').value)||null,
+      alcAr:alcNum('arr-alc-ar'),
       alcAk:document.getElementById('arr-alc-ak').value,
       alcAc:document.getElementById('arr-alc-ac').value,
       alcAm:document.getElementById('arr-alc-am')?document.getElementById('arr-alc-am').value:''
@@ -2962,12 +2981,12 @@ async function saveLogEdit(){
     dist:(depOdo!=null&&arrOdo!=null&&arrOdo>=depOdo)?Math.round(arrOdo-depOdo):null,
     alcBt:document.getElementById('edit-alc-bt').value,
     alcBd:document.getElementById('edit-alc-bd').value,
-    alcBr:parseFloat(document.getElementById('edit-alc-br').value)||null,
+    alcBr:alcNum('edit-alc-br'),
     alcBk:document.getElementById('edit-alc-bk').value,
     alcBc:document.getElementById('edit-alc-bc').value,
     alcAt:document.getElementById('edit-alc-at').value,
     alcAd:document.getElementById('edit-alc-ad').value,
-    alcAr:parseFloat(document.getElementById('edit-alc-ar').value)||null,
+    alcAr:arrOdo!=null?alcNum('edit-alc-ar'):(document.getElementById('edit-alc-ar').value.trim()===''?null:alcNum('edit-alc-ar')),
     alcAk:document.getElementById('edit-alc-ak').value,
     alcAc:document.getElementById('edit-alc-ac').value,
     alcBm:document.getElementById('edit-alc-bm').value,
