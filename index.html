@@ -13,9 +13,12 @@
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="apple-touch-icon" href="/icon-192.png">
 <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png">
-<title>走行管理 v8.4</title>
+<title>走行管理 v8.5</title>
 <!-- ============================================================
-     走行管理システム  Version 8.4  (2026-11-17)
+     走行管理システム  Version 8.5  (2026-11-20)
+     変更点(v8.5):
+       - 到着時の乗車後アルコールチェックに出発時（乗車前）の検知器・酒気帯び・確認方法・確認者を引き継ぐ
+       - 出発・到着画面を開くと測定値の標準値を0.00にする
      変更点(v8.4):
        - アルコール測定値が未記入なら0で保存（出発・到着・編集）。0を入力しても空欄になっていた不具合を修正
        - 到着時に乗車後アルコールチェック（確認者・時刻）が未記入なら警告。OKで到着は記録できる
@@ -382,7 +385,7 @@ datalist option{font-size:16px;}
 <div id="app" style="display:none;height:100vh;flex-direction:column;">
   <div class="app-header">
     <span class="logo">🚗</span>
-    <h1>走行管理 <span style="font-size:10px;font-weight:400;color:var(--text3);vertical-align:middle">v8.4</span></h1>
+    <h1>走行管理 <span style="font-size:10px;font-weight:400;color:var(--text3);vertical-align:middle">v8.5</span></h1>
     <span class="user" id="user-display"></span>
     <button id="install-btn-header" onclick="promptInstall()" style="display:none;padding:6px 12px;background:var(--accent);border:none;border-radius:8px;color:#fff;font-size:12px;font-weight:700;cursor:pointer;margin-right:6px;">📲 インストール</button>
     <button class="sign-out-btn" onclick="signOut()">ログアウト</button>
@@ -1682,8 +1685,12 @@ function onArrSelect(){
   document.getElementById('arr-dest').value=log.dest||''; // 出発時の行先を初期値に（到着時に修正可）
   const now=new Date();
   document.getElementById('arr-alc-at').value=pad(now.getHours())+':'+pad(now.getMinutes());
-  if(log.alcBd)document.getElementById('arr-alc-ad').value=log.alcBd;
-  if(log.alcBc)document.getElementById('arr-alc-ac').value=log.alcBc;
+  // 乗車後アルコールは出発時（乗車前）の内容を引き継ぐ。測定値は標準 0
+  document.getElementById('arr-alc-ad').value=log.alcBd||'あり';
+  document.getElementById('arr-alc-ak').value=log.alcBk||'なし';
+  document.getElementById('arr-alc-am').value=log.alcBm||'対面';
+  document.getElementById('arr-alc-ac').value=log.alcBc||'';
+  document.getElementById('arr-alc-ar').value=ALC_DEFAULT;
 }
 
 function onFuelVehicleChange(){
@@ -1702,7 +1709,8 @@ function onFuelVehicleChange(){
 // ===================================================
 // SAVE DEPARTURE
 // ===================================================
-// アルコール測定値（mg/L）: 未記入は 0 として保存（0 を入力した場合も 0 のまま）
+// アルコール測定値（mg/L）: 入力欄の標準値は 0。未記入は 0 として保存（0 を入力した場合も 0 のまま）
+const ALC_DEFAULT='0.00';
 function alcNum(id){
   const v=String(document.getElementById(id)?.value??'').trim();
   const n=parseFloat(v);
@@ -2481,6 +2489,7 @@ function openModal(name){
   if(name==='dep'){
     const now=new Date();
     document.getElementById('dep-alc-bt').value=pad(now.getHours())+':'+pad(now.getMinutes());
+    document.getElementById('dep-alc-br').value=ALC_DEFAULT; // 測定値の標準は 0
     populateVehicleSelects();
     const lastVehicle=getSaved('lastVehicle');
     if(lastVehicle){
@@ -2495,6 +2504,7 @@ function openModal(name){
     populateVehicleSelects();
     const now=new Date();
     document.getElementById('arr-alc-at').value=pad(now.getHours())+':'+pad(now.getMinutes());
+    document.getElementById('arr-alc-ar').value=ALC_DEFAULT; // 測定値の標準は 0
   }
   if(name==='fuel'){
     document.getElementById('fuel-date').value=todayStr();
